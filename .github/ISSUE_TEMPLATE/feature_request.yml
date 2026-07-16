@@ -1,0 +1,30 @@
+name: Feature request
+description: 提出可验证的工作流改进建议
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: 描述实际创作或维护过程中遇到的困难。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: 说明期待的用户体验，而不必预设实现。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: 我已确认提案不包含未授权小说内容或敏感信息。
+          required: true

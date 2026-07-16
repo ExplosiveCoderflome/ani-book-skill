@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/ExplosiveCoderflome/ani-book-skill/security/advisories/new
+    about: 请私下报告安全问题。
+  - name: Support and usage questions
+    url: https://github.com/ExplosiveCoderflome/ani-book-skill/blob/main/SUPPORT.md
+    about: 使用问题请先阅读支持指南。

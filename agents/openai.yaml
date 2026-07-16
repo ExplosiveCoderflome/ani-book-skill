@@ -1,0 +1,6 @@
+interface:
+  display_name: "长篇小说生产"
+  short_description: "从灵感到正文的长篇小说规划、写作、续写、审查与TXT导出"
+  default_prompt: "使用 $produce-long-form-novel 推进我的小说，或将已生成章节导出为 TXT。"
+policy:
+  allow_implicit_invocation: true

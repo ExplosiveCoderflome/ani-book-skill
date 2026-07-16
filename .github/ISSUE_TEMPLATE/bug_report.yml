@@ -1,0 +1,45 @@
+name: Bug report
+description: 报告可复现的问题
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请勿粘贴私人小说全文、密钥或其他敏感信息；请提供已脱敏的最小复现内容。
+  - type: input
+    id: version
+    attributes:
+      label: Skill revision
+      description: 使用的提交 SHA、Release 或安装来源。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: 请给出从调用到问题出现的最小步骤。
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: 包括完整报错信息和已脱敏的最小片段。
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: 操作系统、Python 版本、Codex 版本（如适用）。
