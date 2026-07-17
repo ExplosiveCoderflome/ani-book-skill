@@ -11,6 +11,25 @@
 
 *From the first spark to the next chapter: every commit makes the novel more coherent, not the context more chaotic.*
 
+## The core workflow — make every chapter strengthen the next
+
+This is not a linear “generate another passage” chat. It is a production loop that calibrates, accumulates, and recovers after every accepted chapter:
+
+| Stage | What moves forward | What stays protected |
+| --- | --- | --- |
+| **01 · Find direction** | Reader promise, chart opportunities, or the real problem in an existing story | A vague idea is not prematurely frozen into an outline |
+| **02 · Build the engine** | Protagonist drive, rules, relationships, and volume-level promises | Every volume has a clear reason to keep reading |
+| **03 · Finish one chapter** | Chapter contract, bounded context, complete prose, humanization, review | Goals, character limits, turns, and the ending pull remain coherent |
+| **04 · Create the next foundation** | Facts, promises, resources, relationship changes, recovery checkpoints | Only accepted material becomes durable memory |
+
+```text
+Direction → story engine → chapter plan → complete prose → review and commit
+    ↑                                                       ↓
+    └──────────────── continuity state and next chapter ───┘
+```
+
+**The key rule: stabilize one chapter at a time.** No stitched parallel fragments, no unreviewed candidates becoming facts, and no need to load the entire novel into the next context.
+
 ## What it helps you do
 
 | Challenge | Workflow | Durable output |
@@ -48,16 +67,6 @@ Use $produce-long-form-novel to analyze recent xianxia chart composition and cre
 ```text
 Use $produce-long-form-novel to deconstruct this authorized novel text; establish coverage, segment notes, and an overview first.
 ```
-
-## Built for the long run
-
-```text
-Idea → reader promise → world and cast → volume payoff
-     → chapter contract → complete prose → review
-     → continuity commit → next chapter
-```
-
-Migrated workspaces use YAML as the sole continuity authority for facts, promises, resources, dynamic character state, and relationships. Markdown ledgers are generated views; SQLite only accelerates retrieval and can be deleted or rebuilt without changing story truth. This keeps context bounded as the novel grows.
 
 ## Install and use local tools
 
