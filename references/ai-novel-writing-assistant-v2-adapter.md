@@ -16,6 +16,13 @@
 | 章节正文 | `Chapter.content` / chapter draft artifact |
 | 审查与修复 | acceptance、audit、patch repair、heavy repair、quality debt |
 | 连续性更新 | fact ledger、artifact delta、resource/payoff/relation updates |
+| `analyses/*/source-manifest.md` 与 `coverage-map.md` | 拆书 source range、document version、source scope 与章节缓存 |
+| `analyses/*/notes/*` | `BookAnalysisSourceCache` 中按来源范围和模型参数缓存的 segment notes |
+| `analyses/*/sections/*` | `BookAnalysisSection` 的 Markdown、structured data 与 evidence |
+| `evidence-ledger.md` | 字段级 evidence、章节锚点与原文 offset；Skill 额外记录置信度和反例 |
+| `pattern-cards.md` | 从拆书结论提炼的原创机制卡；项目侧可映射到写法资产或续写上下文 |
+| `graph/nodes.jsonl` 与 `graph/edges.jsonl` | Skill 的轻量 BookGraph；导入项目时映射到当前知识图谱或结构化 RAG 合同，不直接写数据库 |
+| `retrieval/analysis-index.sqlite3` | 可重建的本地派生索引，不作为项目数据库或知识库权威源 |
 
 ## 必须保持的项目边界
 
@@ -26,6 +33,9 @@
 - 创作语义判断使用 AI-first 结构化理解；确定性逻辑只做结构、安全和已结构化输出后的处理。
 - 局部章节质量问题不应自动阻断整本自动导演。
 - 已有正文和用户编辑资产必须受保护。
+- 拆书总览先于其他小节生成并作为定位锚点；其他小节仍须由各自 notes 支撑。
+- 只续跑缺失或失败的小节，保留成功小节、来源范围、预算用量和证据绑定。
+- Skill 的事实/推断/假设、反例与覆盖地图是文件层增强项；导入项目时不得塞入不兼容字段，应先做显式映射。
 
 ## 集成前检查
 
@@ -37,6 +47,7 @@
    - `docs/wiki/workflows/reader-experience-contract.md`
    - `docs/wiki/prompts/prompt-registry-and-structured-output.md`
    - `docs/wiki/rag/knowledge-and-context-assembly.md`
+   - 与拆书、Prompt Registry、结构化输出和知识发布相关的当前 Wiki 页面
 3. 使用当前共享类型和 Prompt schema 作为机器合同，不把 Markdown 标题直接当成 API schema。
 4. 先设计显式导入/导出映射，再操作数据库或生产任务。
 5. 未经用户单独授权，不修改目标项目、不调用生产 API、不启动自动导演任务。

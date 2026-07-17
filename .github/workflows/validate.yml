@@ -19,9 +19,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Compile scripts
         run: python -m compileall -q scripts
       - name: Check CLI entry points
         run: |
           python scripts/export_novel_txt.py --help
           python scripts/check_continuity_workspace.py --help
+          python scripts/continuity_store.py --help
+          python scripts/analysis_retrieval.py --help
+          python scripts/trend_snapshot.py --help
+      - name: Run tests
+        run: python -m unittest discover -s tests -v

@@ -20,6 +20,14 @@ Thumbs.db
 # Private author work: publish only explicitly curated, authorized examples.
 novels/**
 !novels/.gitkeep
+analyses/**
+!analyses/.gitkeep
+trends/**
+!trends/.gitkeep
 
 # Generated exports
 novels/**/exports/
+
+# Rebuildable continuity caches
+**/continuity/index.sqlite3
+**/continuity/index.sqlite3-*

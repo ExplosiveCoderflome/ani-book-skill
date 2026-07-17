@@ -35,7 +35,6 @@
 │   ├── payoff-ledger.md
 │   ├── resource-ledger.md
 │   └── chapter-deltas/
-├── context-packages/
 ├── production/
 │   ├── recovery.md
 │   └── quality-debt.md
@@ -43,7 +42,13 @@
 └── chapters/
 ```
 
-章节目录使用稳定编号，例如 `chapters/chapter-001/plan.md`、`draft.md`、`review.md`。卷文件使用 `volumes/volume-01.md`。不要依赖易变标题作为唯一文件名。
+章节目录使用稳定编号。每个章节目录至少包含 `plan.md`、`context-package.md`、`draft.md` 与 `review.md`，例如 `chapters/chapter-001/context-package.md`。卷文件使用 `volumes/volume-01.md`。不要依赖易变标题作为唯一文件名。
+
+### 章节装配与模块权威
+
+采用“模块为权威源，章节为装配包”的布局：`characters/`、`world-bible.md` 与 `continuity/` 分别保存跨章节复用的角色、世界与连续性事实；`chapters/chapter-XXX/` 集中保存该章的合同、最小上下文、正文和审查。
+
+`context-package.md` 是为单章读取、写作和审查准备的约束装配包，不是新的事实仓库。它应列出必要约束、稳定 ID、来源路径和本章解释，不能复制完整角色档案、世界设定或账本，更不能与模块权威源形成第二份可编辑真相。长期事实变化时，先更新相应模块权威源，再重新生成或标记受影响章节的上下文包为 `stale`。
 
 ## 状态索引
 
@@ -79,6 +84,8 @@ next_action:
 
 使用来源：`ai_generated`、`user_edited`、`imported`。只要用户修改过产物，就将 `protected` 设为 `true`，除非用户明确交还 AI 重写。
 
+新书设置使用 [novel-brief.md](novel-brief.md) 的确认状态。含有关键 `AI 推荐待确认` 设置的简报只能保持预览或 `in_progress`；不得标为 `ready`，也不得成为正式世界观、卷规划或章节的稳定上游。`用户授权 AI 决定` 可以进入权威资产，但必须保留授权范围和 AI 采用的具体值，不能伪装成用户亲自选择。
+
 `schema_version: 1` 工作区仍可读取。只有首次建立连续性基线或首次提交章节差分时才升级为 `2`，并仅增加连续性字段和对应新产物；不得借升级重写历史正文、计划或审查记录。
 
 ## 权威性顺序
@@ -109,7 +116,7 @@ next_action:
 - `continuity/payoff-ledger.md`：承诺、伏笔、目标窗口、推进和兑现状态。
 - `continuity/resource-ledger.md`：跨章关键资源的持有人、归属、可见性、状态和使用窗口。
 - `continuity/chapter-deltas/*`：稳定章节对事实、角色、资源、关系、知情边界和伏笔的变更记录。
-- `context-packages/*`：某章实际使用的上下文来源、选择、裁剪、缺失和风险，不保存大段正文。
+- `chapters/*/context-package.md`：某章实际使用的上下文来源、选择、裁剪、缺失和风险；它是章节装配包，不保存大段正文，也不取代角色、世界或连续性模块的权威事实。
 - `production/recovery.md`：最后稳定章节、下一步、受保护资产、stale 资产和恢复风险。
 - `production/quality-debt.md`：可继续生产但尚待回收的局部问题。
 
@@ -131,3 +138,4 @@ next_action:
 4. 先保存产物，再更新状态索引。
 5. 写入失败时不要把状态标为 ready。
 6. 每次只设置一个明确的 `next_action`。
+7. 未确认的高影响推荐只保留在对话预览或 `in_progress` 草稿中；用户确认或授权 AI 决定后才能固化并推进依赖它的下游。

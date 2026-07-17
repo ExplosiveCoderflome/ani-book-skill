@@ -8,11 +8,14 @@ import hashlib
 import re
 from pathlib import Path
 
+from continuity_store import validate_workspace
+
 
 SOURCE_HASH = re.compile(
     r"<!--\s*source-hash:\s*([^|]+?)\s*\|\s*([0-9A-Fa-f]{64})\s*-->",
 )
 SCHEMA_VERSION = re.compile(r"^schema_version:\s*(\d+)\s*$", re.MULTILINE)
+GENERATED_FROM = re.compile(r"<!--\s*generated-from:\s*continuity/data revision\s+(\d+);", re.IGNORECASE)
 
 REQUIRED_FILES = (
     "continuity/baseline.md",
@@ -62,6 +65,7 @@ def main() -> int:
     errors: list[str] = []
     stale: list[str] = []
     state_path = workspace / "novel-state.yaml"
+    structured_store = (workspace / "continuity" / "data").is_dir()
 
     if not state_path.is_file():
         errors.append("missing novel-state.yaml")
@@ -73,6 +77,8 @@ def main() -> int:
         for key in REQUIRED_CONTINUITY_KEYS:
             if not re.search(rf"^\s{{2}}{re.escape(key)}:\s*", state_text, re.MULTILINE):
                 errors.append(f"novel-state.yaml is missing continuity.{key}")
+        if structured_store and not re.search(r"^\s{2}structured_store:\s*$", state_text, re.MULTILINE):
+            errors.append("novel-state.yaml is missing continuity.structured_store")
 
     for relative in REQUIRED_FILES:
         if not (workspace / relative).is_file():
@@ -96,6 +102,22 @@ def main() -> int:
             actual_hash = sha256(source)
             if actual_hash != expected_hash.upper():
                 stale.append(f"{label}: {source_text.strip()} changed")
+
+    if structured_store:
+        store_errors, store_stale = validate_workspace(workspace)
+        errors.extend(store_errors)
+        stale.extend(store_stale)
+        if not store_errors:
+            from continuity_store import load_store
+
+            revision = load_store(workspace)["manifest"]["revision"]
+            for relative in ("continuity/baseline.md", "continuity/fact-ledger.md", "continuity/payoff-ledger.md", "continuity/resource-ledger.md"):
+                path = workspace / relative
+                if not path.is_file():
+                    continue
+                match = GENERATED_FROM.search(path.read_text(encoding="utf-8"))
+                if not match or int(match.group(1)) != revision:
+                    stale.append(f"{relative}: generated Markdown view is stale")
 
     if errors:
         print("CONTINUITY CHECK FAILED")
