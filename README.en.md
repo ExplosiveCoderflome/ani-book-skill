@@ -1,63 +1,92 @@
 # Ani Book Skill
 
+[![Validate](https://github.com/ExplosiveCoderflome/ani-book-skill/actions/workflows/validate.yml/badge.svg)](https://github.com/ExplosiveCoderflome/ani-book-skill/actions/workflows/validate.yml)
 [中文](README.md) · [Changelog](docs/releases/release-notes.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-Ani Book Skill is a Codex workflow for producing long-form Chinese web novels, analyzing hot-genre rankings, and deconstructing authorized reference works. It turns ranking research, story planning, drafting, review, and continuity into editable, recoverable artifacts.
+> Turn “I want to write a long novel” into a writing system that can keep going.
 
-## Origin and relationship
+**Ani Book Skill** is a Codex workflow for long-form Chinese fiction. It connects market research, story design, chapter production, revision, and durable continuity into a local, recoverable process—so an author can still know what matters when the manuscript is dozens of chapters deep.
 
-This project was distilled by the maintainer of [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant) from its long-form production workflow, creative methodology, and practical experience. It packages reusable writing practices as a lightweight, documentation-first Codex Skill.
+![Ani Book Skill workflow: idea and research, story architecture, drafting and review, continuity storage, and the next chapter loop](assets/workflow-hero.png)
 
-- This is a standalone Skill, not a mirror or runtime distribution of the original project. It does not include that project's frontend, backend, database, agent services, or desktop code.
-- The [Apache License 2.0](LICENSE) applies only to the files in this repository. Refer to the original repository for its license and commercial-authorization policy.
-- The original project is cited for origin and attribution only; this Skill has no runtime dependency on any version of it.
+*From the first spark to the next chapter: every commit makes the novel more coherent, not the context more chaotic.*
 
-## Highlights
+## What it helps you do
 
-- Move from an idea to a novel brief, story bible, world, cast, volume plan, and chapters.
-- Guide beginners through progressive confirmation: ask only 2–3 high-impact choices per round, explain one recommendation, and remember decisions that are confirmed, delegated to AI, or marked unnecessary.
-- Analyze titles, tags, and synopses from public official charts to describe current chart composition, compare like-for-like dates, and create 3–5 opportunity cards without reading novel prose.
-- Deconstruct authorized local texts, accessible online sources, or your own manuscript into evidence-backed sections, coverage maps, and safely reusable mechanism cards.
-- Query long analyses through a lightweight BookGraph, local SQLite text search, and optional vector fusion without bundling an embedding model or vector database.
-- Preserve long-form continuity with chapter contracts, context packages, and readable ledgers.
-- Optionally migrate continuity to YAML authority with generated Markdown views, a rebuildable SQLite index, and bounded context assembly.
-- Revise and review drafts while protecting accepted facts and author-written prose.
-- Export completed chapters to TXT and check workspace continuity with included Python tools.
-- Keep content local and portable with Markdown and YAML.
+| Challenge | Workflow | Durable output |
+| --- | --- | --- |
+| Find a viable direction | Analyze public chart metadata without reading novel prose | Snapshots, reports, opportunity cards |
+| Turn an idea into a serial engine | Confirm only the few creative choices that matter, then plan volumes and chapter obligations | Brief, bible, cast, volume plan, beats |
+| Keep chapters from drifting | Plan → bounded context → complete draft → humanization → review → continuity commit | Prose, review, delta, next action |
+| Keep long-running memory affordable | Treat YAML as authority and SQLite as a rebuildable index | Checkpoints, readable views, bounded context |
 
-## Use it
+## Why this is more than a prompt collection
 
-Install this repository as a personal Codex Skill, then invoke it in Codex:
+- Start with reader promise before expanding the setting.
+- Commit one accepted chapter at a time; unreviewed candidates never become story facts.
+- Preserve facts, resources, promises, character state, and relationships with stable IDs and chapter evidence.
+- Keep manuscripts and research local, inspectable, editable, and portable.
+
+## Start with one prompt
 
 ```text
 Use $produce-long-form-novel to plan a long novel from my idea.
 ```
 
-For an underspecified idea, the skill presents a small set of choices—such as audience channel, platform shape, and primary reader reward—instead of a full questionnaire. Recommendations may be previewed, but they do not become authoritative planning inputs until you confirm them or delegate the decision to AI for the current project.
+For an existing workspace:
 
-Read [SKILL.md](SKILL.md) for the complete workflow contract. The primary documentation is maintained in Chinese because the workflow targets Chinese fiction.
+```text
+Use $produce-long-form-novel to continue novels/<novel-name>/ and determine the next safe production step.
+```
 
-For reference analysis, invoke the same skill with an authorized source and ask it to establish scope, segment notes, and an overview before deeper conclusions.
+For market research or authorized analysis:
 
-For hot-genre research, specify a platform and audience channel. The skill defaults to the top 20 entries from up to three charts and falls back to user-provided screenshots, tables, or text when public pages are unavailable.
+```text
+Use $produce-long-form-novel to analyze recent xianxia chart composition and create opportunity cards.
+```
 
-## Local tools
+```text
+Use $produce-long-form-novel to deconstruct this authorized novel text; establish coverage, segment notes, and an overview first.
+```
 
-Python 3.10+ is required. Install the YAML continuity dependency with `python -m pip install -r requirements.txt`.
+## Built for the long run
+
+```text
+Idea → reader promise → world and cast → volume payoff
+     → chapter contract → complete prose → review
+     → continuity commit → next chapter
+```
+
+Migrated workspaces use YAML as the sole continuity authority for facts, promises, resources, dynamic character state, and relationships. Markdown ledgers are generated views; SQLite only accelerates retrieval and can be deleted or rebuilt without changing story truth. This keeps context bounded as the novel grows.
+
+## Install and use local tools
+
+Install this repository as a personal Codex Skill, then invoke `$produce-long-form-novel`. See [SKILL.md](SKILL.md) for the complete workflow contract.
+
+Python 3.10+ is required. Install the YAML continuity dependency:
+
+```powershell
+python -m pip install -r requirements.txt
+```
 
 ```powershell
 python scripts/export_novel_txt.py novels/<novel-name>
 python scripts/check_continuity_workspace.py novels/<novel-name>
 python scripts/continuity_store.py migrate novels/<novel-name> --dry-run
 python scripts/analysis_retrieval.py build analyses/<analysis-name>
-python scripts/analysis_retrieval.py search analyses/<analysis-name> "升级循环"
 python scripts/trend_snapshot.py validate trends/<scope>/snapshots/<date>/<platform>-<chart>.jsonl
-python scripts/trend_snapshot.py summarize <snapshot.jsonl> --format markdown
-python scripts/trend_snapshot.py compare <older.jsonl> <newer.jsonl> --format json
 ```
 
-`novels/`, `analyses/`, and `trends/` are ignored by default to protect manuscripts, analysis sources, and ranking research. Trend snapshots are metadata-only and never enable BookGraph, RAG, or vector retrieval. Put only authorized, sanitized examples in `examples/` if you choose to publish them.
+`novels/`, `analyses/`, and `trends/` are ignored by default to protect private manuscripts, source texts, and research snapshots.
 
-## Contributing and license
+## Clear boundaries
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md). This project is released under the [Apache License 2.0](LICENSE).
+- Chart research uses public metadata only; it does not infer guaranteed trends from a single snapshot.
+- Reference analysis requires authorized material and produces transferable mechanisms, not close imitation.
+- This is a writing workflow, not a hosting platform or a replacement for author judgment.
+
+## Origin and license
+
+This standalone, documentation-first Skill was distilled by the maintainer of [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant) from long-form production experience. It does not include or depend on that project's frontend, backend, database, or runtime services.
+
+Repository files are released under the [Apache License 2.0](LICENSE). See the [changelog](docs/releases/release-notes.md) for the latest updates.
