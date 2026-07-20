@@ -97,7 +97,7 @@ SQLite 可重建索引
 
 这意味着章节越多，并不需要把整本书塞进模型上下文；索引也永远不能反向修改你的故事事实。
 
-### 跨书资产图谱（第一期）
+### 跨书资产图谱（第一至三期）
 
 可在本机私有的、默认不提交 Git 的 `libraries/` 中管理两类已定稿资产：可复用的题材/机制卡（`reusable`）和共享 IP 正史（`universe`）。每本 schema v3 小说可以按资产选择 `fork`（独立副本）或 `sync`（受保护的共享链接）。同步只报告更新或冲突，不会覆盖正文；作者可显式保留本书、采用共享版本，或在已批准/委托时提交正史更新。
 
@@ -112,9 +112,15 @@ python scripts/asset_graph.py context libraries novels/<小说名> --assets <资
 python scripts/asset_graph.py validate-selection libraries novels/<小说名> novels/<小说名>/context-packages/chapter-001.assets.yaml
 python scripts/novelctl.py context novels/<小说名> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
 python scripts/asset_graph.py verify-candidate novels/<小说名> novels/<小说名>/production/asset-candidates/chapter-001/<资产ID>.yaml
+
+# 单个资产库默认对应一个共享 IP 宇宙；先审查事件与影响，再显式发布
+python scripts/asset_graph.py delegate-universe libraries --enabled
+python scripts/asset_graph.py canon-check libraries
+python scripts/asset_graph.py timeline libraries
+python scripts/asset_graph.py impact libraries <正史候选.yaml> --workspace novels/<小说名>
 ```
 
-图谱只从验收连续性和已批准/委托的定稿资产派生，并且只返回有限候选；写作前 Codex 会回读 YAML/Markdown 权威源。完整规则见 [跨书资产图谱合同](references/cross-book-asset-graph.md)。
+每个库默认是一个共享 IP 宇宙。已发布的 `universe/event` 用稳定序号、参与资产、影响和可选先后关系派生正史编年史；`canon-check` 检查端点、证据、顺序与环，`impact` 仅报告命令中明确列出的小说会受到的同步链接、章节选择和时间线邻域，绝不改写任何工件。正史仍需作者批准、按资产委托或未撤销的宇宙级 Codex 委托；图谱只从验收连续性和已批准/委托的定稿资产派生，并且只返回有限候选，写作前 Codex 会回读 YAML/Markdown 权威源。完整规则见 [跨书资产图谱合同](references/cross-book-asset-graph.md)。
 
 ## 安装与本地工具
 
@@ -186,12 +192,15 @@ python scripts/token_usage.py summarize novels/<小说名> --write
 
 ### 2026-07-20
 
-重大更新：新增 Codex 原生跨书资产图谱，并完善长篇生产控制与逐生成步骤 Token 记账。
+重大更新：跨书资产图谱现已覆盖章节生产、共享宇宙编年史与影响审查，并持续完善长篇生产控制与逐生成步骤 Token 记账。
 
 - 本机私有的 `libraries/` 可保存已定稿的可复用机制和共享 IP 正史；每本 schema v3 小说按资产选择独立 `fork` 或受保护的 `sync`。
 - 同步只报告更新或冲突，不覆盖正文；作者可显式保留本书、采用共享版本，或在批准/委托后提交正史更新。
 - 图谱只从验收连续性及已批准/委托的资产派生，查询只返回有限候选，写作前仍回读 YAML/Markdown 权威源。
 - 跨书资产现在可被章节显式选择并锁定版本；选中资产冲突会阻断上下文、正文和审校，定稿后的提炼资产仍须验证证据并走既有治理发布。
+- 每个私有资产库默认对应一个共享 IP 宇宙；已发布的 `universe/event` 可以用稳定序号、参与资产、影响与先后关系派生正史时间线。
+- `canon-check`、`timeline` 与 `impact` 先审查事件端点、顺序、循环和明确工作区影响；影响报告只给出风险，不改写正文、选择清单或本书快照。
+- 宇宙级 Codex 委托可显式启用或撤销，且不改变可复用资产的按资产治理；正史仍须走作者批准或有效委托的显式发布。
 - `novelctl.py` 统一负责工作区初始化、唯一下一步、校验、恢复、步骤转换、上下文、检查点、用量和稳定正文导出。
 - `novel-state.yaml` 升级为 schema v3；旧 v1/v2 工作区只读兼容，必须显式迁移并先备份。
 - 用户修改过的正文和规划会被保护，其未写下游只标记为 `stale`，不会被自动覆盖。

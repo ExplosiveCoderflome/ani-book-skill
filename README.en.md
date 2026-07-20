@@ -34,7 +34,7 @@ Direction → story engine → chapter plan → complete prose → review and co
 
 **The key rule: stabilize one chapter at a time.** No stitched parallel fragments, no unreviewed candidates becoming facts, and no need to load the entire novel into the next context.
 
-## Cross-book asset graph (phase one)
+## Cross-book asset graph (phases one through three)
 
 The private, Git-ignored `libraries/` folder can hold finalized reusable assets (`reusable`) and shared-IP canon (`universe`). A schema-v3 book imports each asset as either a standalone `fork` or protected `sync` link. Synchronization only reports an update or conflict—it never overwrites prose. The author explicitly keeps the local version, adopts shared canon, or approves/delegates a canon update.
 
@@ -47,9 +47,13 @@ python scripts/asset_graph.py context libraries novels/<novel-name> --assets <as
 python scripts/asset_graph.py validate-selection libraries novels/<novel-name> novels/<novel-name>/context-packages/chapter-001.assets.yaml
 python scripts/novelctl.py context novels/<novel-name> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
 python scripts/asset_graph.py verify-candidate novels/<novel-name> novels/<novel-name>/production/asset-candidates/chapter-001/<asset-id>.yaml
+python scripts/asset_graph.py delegate-universe libraries --enabled
+python scripts/asset_graph.py canon-check libraries
+python scripts/asset_graph.py timeline libraries
+python scripts/asset_graph.py impact libraries <canon-candidate.yaml> --workspace novels/<novel-name>
 ```
 
-The graph is derived only from accepted continuity and approved/delegated finalized assets. Its bounded results are candidates; Codex re-reads the YAML/Markdown authority before writing. See the [cross-book asset graph contract](references/cross-book-asset-graph.md).
+One library is one shared-IP universe by default. Published `universe/event` assets derive a canon timeline from stable sequence numbers, participants, effects, and optional precedence. `canon-check` validates endpoints, evidence, order, and cycles; `impact` only reports the explicit workspaces' affected sync links, chapter selections, and timeline neighborhood, never rewriting any artifact. Publishing still needs author approval, per-asset delegation, or active universe-level Codex delegation. The graph is derived only from accepted continuity and approved/delegated finalized assets; its bounded results are candidates, and Codex re-reads the YAML/Markdown authority before writing. See the [cross-book asset graph contract](references/cross-book-asset-graph.md).
 
 ## What it helps you do
 
@@ -136,4 +140,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-The private, Git-ignored cross-book asset graph now lets schema-v3 books explicitly select a pinned asset snapshot for each chapter. A selected sync conflict blocks context, drafting, and review without touching prose; an available shared update remains a visible prompt while the book stays pinned. Accepted, committed chapters can stage evidence- and fingerprint-backed publication candidates, still governed by author approval or revocable per-asset Codex delegation. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.
+The private, Git-ignored cross-book asset graph now adds one-universe canon timelines, explicit impact reports, and revocable universe-level Codex delegation. Canon candidates are checked before explicit publication; no command bulk-updates a book snapshot or prose. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.

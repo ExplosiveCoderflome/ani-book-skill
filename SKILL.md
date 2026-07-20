@@ -80,6 +80,8 @@ Read [cross-book-asset-graph.md](references/cross-book-asset-graph.md) before pu
 
 当章节使用跨书资产时，Codex 先从计划和活跃链接提出 `context-packages/chapter-XXX.assets.yaml`，由脚本校验其固定快照、用途和约束；再通过 `novelctl context --asset-library ... --asset-selection ...` 生成有限上下文。选中资产的同步冲突会阻断上下文、正文和审校；共享更新只提示，默认继续使用本书锁定快照。只有正文验收且连续性提交后，才可在 `production/asset-candidates/` 形成待发布资产候选。
 
+一个私有跨书资产库默认是一个共享 IP 宇宙。对 `universe` / `event` 候选，Codex 必须先基于已验收来源明确提出 `content.canon.sequence`、参与资产、影响和可选先后关系，再运行 `asset_graph.py canon-check` 与 `impact ... --workspace <明确工作区>`；影响报告只作风险审查，不能改写任何书或自动升级快照。只有作者批准、按资产委托或未撤销的宇宙级 Codex 委托之一成立时，才能用既有 `publish` 提交正史；`reusable` 资产不接受宇宙级委托。时间线与图谱均为 YAML/JSONL 的可重建派生物，不能替代回读权威 YAML/Markdown。
+
 In a schema-v3 workspace, use `scripts/novelctl.py` as the deterministic control surface for state transitions, validation, recovery, context, checkpoints, usage, and export. Codex remains the only creative generation engine; do not add or invoke a model-provider SDK from this skill.
 
 ## Run the Production Loop

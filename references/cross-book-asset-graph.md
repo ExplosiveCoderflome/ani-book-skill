@@ -1,4 +1,4 @@
-# 跨书资产图谱（第一期）
+# 跨书资产图谱（第一至三期）
 
 在用户要求复用题材机制、共享 IP 设定、跨书角色或世界正史时读取本页。它只适用于已经迁移为 `novel-state.yaml` schema v3 的小说工作区。
 
@@ -73,3 +73,28 @@ python scripts/asset_graph.py publish libraries novels/<book>/production/asset-c
 ```
 
 候选在通过 `publish` 前不进入资产图、不影响其他小说。共享正史仍需作者批准，除非该资产已有未撤销的 Codex 委托。
+
+## 第三期：单宇宙编年史、影响审查与正史治理
+
+一个私有资产库默认对应一个共享 IP 宇宙：新库在 `library.yaml` 写入 `universe_id: <library_id>` 与 `universe_governance: author_approval`；旧库读取时自动以 `library_id` 作为宇宙 ID。作者可以显式启用或撤销 IP 级 Codex 委托：
+
+```powershell
+python scripts/asset_graph.py delegate-universe libraries --enabled
+python scripts/asset_graph.py delegate-universe libraries
+```
+
+`universe` 命名空间的发布许可满足以下任一项即可：作者使用 `--author-approved`、该资产的 `governance: codex_delegated`，或未撤销的 `universe_governance: codex_delegated`。这项宇宙级委托不会改变 `reusable` 资产的按资产治理。
+
+已发布的 `universe` / `event` 资产才是正史事件源，且 `content.canon` 必须包含稳定整数 `sequence`、非空 `participants`（已发布且活跃的同库宇宙资产 ID）和非空 `effects`；可选 `precedes` / `follows` 只能指向已发布的同库正史事件。事件来源仍必须绑定已验收正文、已提交连续性和证据指纹。脚本不会从正文推断事件、因果或影响。
+
+```powershell
+# 先对候选做结构、端点、顺序与循环审查，再显式发布
+python scripts/asset_graph.py canon-check libraries
+python scripts/asset_graph.py timeline libraries
+python scripts/asset_graph.py impact libraries <event-or-asset-candidate.yaml> --workspace novels/<book-a> --workspace novels/<book-b>
+python scripts/asset_graph.py publish libraries <event-or-asset-candidate.yaml> --author-approved
+```
+
+`timeline` 以 `(sequence, event_id)` 稳定排序，同序事件可并列。`canon-check` 检查失效端点、非宇宙引用、缺证据、顺序倒置与事件环。`impact` 只检查命令中明确传入的 schema-v3 工作区，报告受影响的 `sync` 链接、章节资产选择和直接时间线邻域；它返回 `writes: false`，绝不改写正文、本书快照、选择清单、链接或库资产。待审正史影响在章节上下文中只是“需审查”风险；它不会自动升级快照或阻断生产，只有既有的选中 `sync/conflict` 规则继续阻断。
+
+编年史和影响报告从 YAML/JSONL 权威输入派生；SQLite 仍只是可随时重建的索引。通过审查不等于发布：Codex 提出事件、因果和影响结论，作者或有效的可撤销委托再通过既有 `publish` 进行显式正史提交，且不会批量覆盖任何其他小说的本地快照。
