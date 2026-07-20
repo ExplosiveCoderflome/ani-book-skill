@@ -37,7 +37,9 @@
 │   └── chapter-deltas/
 ├── production/
 │   ├── recovery.md
-│   └── quality-debt.md
+│   ├── quality-debt.md
+│   ├── token-usage.jsonl
+│   └── token-summary.json
 ├── volumes/
 └── chapters/
 ```
@@ -55,7 +57,7 @@
 保持 YAML 简短，只记录恢复所需事实，不复制大段创作内容。
 
 ```yaml
-schema_version: 2
+schema_version: 3
 workspace:
   persistence_mode: "workspace"
   promoted_from_preview: true
@@ -63,30 +65,62 @@ novel:
   title: "待定"
   mode: "original"
   current_stage: "novel_brief"
+opening_choices:
+  status: "confirmed"
+  channel: "男频"
+  publication_format: "免费连载"
+  primary_reader_reward: "成长与反转"
+director:
+  mode: "milestone_approval"
+  status: "idle"
+  run_id: null
+  current_step: null
+  current_target: null
+  requested_range: null
+  stop_reason: null
 artifacts:
   novel_brief:
     path: "novel-brief.md"
     status: "in_progress"
     source: "ai_generated"
     protected: false
+    depends_on: []
+    sha256: null
+    approval: "required"
     updated_at: "2026-07-16T00:00:00+08:00"
 continuity:
   baseline_chapter: "chapter_005"
   last_committed_chapter: "chapter_005"
   recovery_path: "production/recovery.md"
   quality_debt_open_count: 0
+usage:
+  ledger_path: "production/token-usage.jsonl"
+  summary_path: "production/token-summary.json"
+  exact_tokens: 0
+  estimated_tokens: 0
+  unavailable_events: 0
 next_action:
   type: "complete_novel_brief"
   target: "novel_brief"
+  reason: "新工作区尚未建立书级简报"
+  requires_approval: false
 ```
 
 使用状态：`missing`、`in_progress`、`ready`、`stale`、`blocked`。不要用 `completed` 掩盖仍需用户确认或仍缺上游依赖的产物。
 
 使用来源：`ai_generated`、`user_edited`、`imported`。只要用户修改过产物，就将 `protected` 设为 `true`，除非用户明确交还 AI 重写。
 
+`usage` 是 `production/token-usage.jsonl` 的简短累计投影，不是计费权威。精确值、估算值和不可统计事件必须分开；投影与账本不一致时，以账本为准并用 `scripts/token_usage.py summarize <workspace> --write` 重建汇总。用量文件不得进入章节上下文包。完整合同见 [token-usage.md](token-usage.md)。
+
 新书设置使用 [novel-brief.md](novel-brief.md) 的确认状态。含有关键 `AI 推荐待确认` 设置的简报只能保持预览或 `in_progress`；不得标为 `ready`，也不得成为正式世界观、卷规划或章节的稳定上游。`用户授权 AI 决定` 可以进入权威资产，但必须保留授权范围和 AI 采用的具体值，不能伪装成用户亲自选择。
 
-`schema_version: 1` 工作区仍可读取。只有首次建立连续性基线或首次提交章节差分时才升级为 `2`，并仅增加连续性字段和对应新产物；不得借升级重写历史正文、计划或审查记录。
+`schema_version: 1` 和 `2` 工作区仍可只读。任何写状态、步骤转换或导演运行前，必须显式执行 `scripts/novelctl.py migrate <workspace>`；迁移先备份原状态，再补充 v3 导演投影、依赖、现有文件指纹和唯一下一步。不得借迁移重写历史正文、计划或审查记录。
+
+新工作区使用 `schema_version: 3`。导演模式使用 `milestone_approval` 或用户明确委托的 `auto`；导演状态使用 `idle`、`running`、`waiting_approval`、`blocked`、`completed`。`approval` 使用 `required`、`approved`、`delegated`、`not_required`。
+
+`opening_choices` 是 `novel_brief` 的语义门槛，只保存频道、发布形态、主要阅读回报及其确认状态。状态为 `pending` 时唯一下一步必须是 `collect_opening_choices`，且控制器必须拒绝启动 `novel_brief`。用户说“由你决定”时记录为 `delegated`；含既有稳定简报的旧工作区迁移时可记录 `legacy_migrated`，不得反向猜测原选择。
+
+`sha256` 记录最近一次已知文件内容。检测到用户修改时，先把该产物标记为 `source: user_edited` 和 `protected: true`，更新其指纹，再把依赖旧内容且未受保护的下游产物标为 `stale`。不得反向覆盖用户文件。
 
 ## 权威性顺序
 
@@ -119,6 +153,8 @@ next_action:
 - `chapters/*/context-package.md`：某章实际使用的上下文来源、选择、裁剪、缺失和风险；它是章节装配包，不保存大段正文，也不取代角色、世界或连续性模块的权威事实。
 - `production/recovery.md`：最后稳定章节、下一步、受保护资产、stale 资产和恢复风险。
 - `production/quality-debt.md`：可继续生产但尚待回收的局部问题。
+- `production/token-usage.jsonl`：每次模型生成调用的追加式用量账本；失败和重试也分别记录。
+- `production/token-summary.json`：可从用量账本重建的精确、估算和不可统计分组汇总。
 
 ## 变更传播
 
@@ -139,3 +175,5 @@ next_action:
 5. 写入失败时不要把状态标为 ready。
 6. 每次只设置一个明确的 `next_action`。
 7. 未确认的高影响推荐只保留在对话预览或 `in_progress` 草稿中；用户确认或授权 AI 决定后才能固化并推进依赖它的下游。
+8. 工作区模式下，在生成产物可用后记录该次模型调用，再刷新用量汇总；运行时未暴露 usage 时记录 `unavailable` 原因，不得用字符数伪造 Token。
+9. schema v3 的写状态操作通过 `scripts/novelctl.py` 执行；先验证产物，再记录模型用量，最后原子替换状态文件。
