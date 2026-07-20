@@ -5,6 +5,8 @@
 
 > Turn “I want to write a long novel” into a writing system that can keep going.
 
+Current version: `0.3.0` (2026-07-21)
+
 **Ani Book Skill** is a Codex workflow for long-form Chinese fiction. It connects market research, story design, chapter production, revision, and durable continuity into a local, recoverable process—so an author can still know what matters when the manuscript is dozens of chapters deep.
 
 ## Codex-native, not another agent runtime
@@ -140,4 +142,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-The private, Git-ignored cross-book asset graph now adds one-universe canon timelines, explicit impact reports, and revocable universe-level Codex delegation. Canon candidates are checked before explicit publication; no command bulk-updates a book snapshot or prose. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.
+Version `0.3.0` adds an explicit Skill currency check: before first use and after a Skill-surface change, compare the authoritative source with the installed mirror, report differences, then synchronize only after validation. The cross-book asset graph, chapter selection, canon timeline, and read-only impact review remain protected by their existing no-overwrite boundaries. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.

@@ -55,6 +55,16 @@ class CodexNativeWorkflowDocsTests(unittest.TestCase):
         for forbidden in ("openai==", "anthropic", "litellm", "langchain"):
             self.assertNotIn(forbidden, requirements)
 
+    def test_skill_currency_check_is_required_before_runs_and_sync(self) -> None:
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("first Skill run", agents)
+        self.assertIn("sync_skill_mirror.py check", agents)
+        self.assertIn("sync_skill_mirror.py sync", agents)
+        self.assertIn("Before the first production action", skill)
+        self.assertIn("sync_skill_mirror.py check", skill)
+        self.assertIn("Do not silently continue with a stale installed copy", skill)
+
 
 if __name__ == "__main__":
     unittest.main()
