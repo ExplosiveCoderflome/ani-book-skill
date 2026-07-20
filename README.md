@@ -9,6 +9,10 @@
 
 从一个模糊灵感开始，到几十章以后仍知道人物此刻知道什么、伏笔该在哪里兑现、这一章为什么值得读——这正是它要解决的问题。
 
+## Codex 原生驱动，不是另一套 Agent 运行时
+
+**Codex 本身是唯一的创作理解、规划、生成、审校与判断引擎。** Skill 定义过程合同；仓库里的 Python 只做确定性状态、校验、索引、冲突检测和导出。本项目不是 `AI-Novel-Writing-Assistant` 的运行时或子模块，不接入模型 Provider SDK、Web API、数据库权威、队列或自研 Agent Runtime；可见的 provider/model 信息仅用于 Codex 宿主实际暴露时的 Token 诊断。
+
 ![Ani Book Skill 工作流：灵感与选题、故事架构、正文审查、连续性存储构成一个可持续循环](assets/workflow-hero.png)
 
 *从创意火花到下一章：每次回灌都让小说更完整，而不是让上下文更失控。*
@@ -93,6 +97,20 @@ SQLite 可重建索引
 
 这意味着章节越多，并不需要把整本书塞进模型上下文；索引也永远不能反向修改你的故事事实。
 
+### 跨书资产图谱（第一期）
+
+可在本机私有的、默认不提交 Git 的 `libraries/` 中管理两类已定稿资产：可复用的题材/机制卡（`reusable`）和共享 IP 正史（`universe`）。每本 schema v3 小说可以按资产选择 `fork`（独立副本）或 `sync`（受保护的共享链接）。同步只报告更新或冲突，不会覆盖正文；作者可显式保留本书、采用共享版本，或在已批准/委托时提交正史更新。
+
+```powershell
+python scripts/asset_graph.py init libraries
+python scripts/asset_graph.py publish libraries <accepted-candidate.yaml> --author-approved
+python scripts/asset_graph.py import libraries novels/<小说名> <资产ID> --mode sync
+python scripts/asset_graph.py reconcile libraries novels/<小说名>
+python scripts/asset_graph.py context libraries novels/<小说名> --assets <资产ID> --max-depth 2 --max-chars 4000
+```
+
+图谱只从验收连续性和已批准/委托的定稿资产派生，并且只返回有限候选；写作前 Codex 会回读 YAML/Markdown 权威源。完整规则见 [跨书资产图谱合同](references/cross-book-asset-graph.md)。
+
 ## 安装与本地工具
 
 将本仓库安装为个人 Codex Skill 后，直接在 Codex 中使用 `$produce-long-form-novel`。完整行为契约见 [SKILL.md](SKILL.md)。
@@ -143,7 +161,7 @@ python scripts/token_usage.py record novels/<小说名> --route novel --step cha
 python scripts/token_usage.py summarize novels/<小说名> --write
 ```
 
-`novels/`、`analyses/` 和 `trends/` 默认被忽略，避免把真实小说、来源文本或研究快照误推送到公开仓库。
+`novels/`、`analyses/`、`trends/` 和 `libraries/` 默认被忽略，避免把真实小说、来源文本、研究快照或私有资产库误推送到公开仓库。
 
 ## 清晰的边界
 
@@ -163,8 +181,11 @@ python scripts/token_usage.py summarize novels/<小说名> --write
 
 ### 2026-07-20
 
-重大更新：新增 Codex 原生长篇生产控制层与逐生成步骤 Token 记账。
+重大更新：新增 Codex 原生跨书资产图谱，并完善长篇生产控制与逐生成步骤 Token 记账。
 
+- 本机私有的 `libraries/` 可保存已定稿的可复用机制和共享 IP 正史；每本 schema v3 小说按资产选择独立 `fork` 或受保护的 `sync`。
+- 同步只报告更新或冲突，不覆盖正文；作者可显式保留本书、采用共享版本，或在批准/委托后提交正史更新。
+- 图谱只从验收连续性及已批准/委托的资产派生，查询只返回有限候选，写作前仍回读 YAML/Markdown 权威源。
 - `novelctl.py` 统一负责工作区初始化、唯一下一步、校验、恢复、步骤转换、上下文、检查点、用量和稳定正文导出。
 - `novel-state.yaml` 升级为 schema v3；旧 v1/v2 工作区只读兼容，必须显式迁移并先备份。
 - 用户修改过的正文和规划会被保护，其未写下游只标记为 `stale`，不会被自动覆盖。

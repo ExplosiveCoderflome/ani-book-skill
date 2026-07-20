@@ -35,6 +35,7 @@
 │   ├── payoff-ledger.md
 │   ├── resource-ledger.md
 │   └── chapter-deltas/
+├── cross-book-assets/                # 可选：导入资产的本书快照
 ├── production/
 │   ├── recovery.md
 │   ├── quality-debt.md
@@ -51,6 +52,8 @@
 采用“模块为权威源，章节为装配包”的布局：`characters/`、`world-bible.md` 与 `continuity/` 分别保存跨章节复用的角色、世界与连续性事实；`chapters/chapter-XXX/` 集中保存该章的合同、最小上下文、正文和审查。
 
 `context-package.md` 是为单章读取、写作和审查准备的约束装配包，不是新的事实仓库。它应列出必要约束、稳定 ID、来源路径和本章解释，不能复制完整角色档案、世界设定或账本，更不能与模块权威源形成第二份可编辑真相。长期事实变化时，先更新相应模块权威源，再重新生成或标记受影响章节的上下文包为 `stale`。
+
+跨书资产只在 schema-v3 工作区中通过 `continuity/data/asset-links.yaml` 建立链接；`cross-book-assets/` 是本书快照而非正文替代品。图谱命中只是候选，章节装配前必须回读相应 YAML/Markdown 权威源；见 [cross-book-asset-graph.md](cross-book-asset-graph.md)。
 
 ## 状态索引
 

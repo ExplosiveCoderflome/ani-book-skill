@@ -7,6 +7,10 @@
 
 **Ani Book Skill** is a Codex workflow for long-form Chinese fiction. It connects market research, story design, chapter production, revision, and durable continuity into a local, recoverable process—so an author can still know what matters when the manuscript is dozens of chapters deep.
 
+## Codex-native, not another agent runtime
+
+**Codex itself is the only engine for creative understanding, planning, generation, review, and judgment.** The Skill is the process contract; Python performs only deterministic state, validation, indexing, conflict detection, and export. This is not an `AI-Novel-Writing-Assistant` runtime or submodule: it does not add a model-provider SDK, Web API, database authority, queue, or custom agent runtime. Provider/model fields are Token diagnostics only when exposed by the Codex host.
+
 ![Ani Book Skill workflow: idea and research, story architecture, drafting and review, continuity storage, and the next chapter loop](assets/workflow-hero.png)
 
 *From the first spark to the next chapter: every commit makes the novel more coherent, not the context more chaotic.*
@@ -29,6 +33,20 @@ Direction → story engine → chapter plan → complete prose → review and co
 ```
 
 **The key rule: stabilize one chapter at a time.** No stitched parallel fragments, no unreviewed candidates becoming facts, and no need to load the entire novel into the next context.
+
+## Cross-book asset graph (phase one)
+
+The private, Git-ignored `libraries/` folder can hold finalized reusable assets (`reusable`) and shared-IP canon (`universe`). A schema-v3 book imports each asset as either a standalone `fork` or protected `sync` link. Synchronization only reports an update or conflict—it never overwrites prose. The author explicitly keeps the local version, adopts shared canon, or approves/delegates a canon update.
+
+```powershell
+python scripts/asset_graph.py init libraries
+python scripts/asset_graph.py publish libraries <accepted-candidate.yaml> --author-approved
+python scripts/asset_graph.py import libraries novels/<novel-name> <asset-id> --mode sync
+python scripts/asset_graph.py reconcile libraries novels/<novel-name>
+python scripts/asset_graph.py context libraries novels/<novel-name> --assets <asset-id> --max-depth 2 --max-chars 4000
+```
+
+The graph is derived only from accepted continuity and approved/delegated finalized assets. Its bounded results are candidates; Codex re-reads the YAML/Markdown authority before writing. See the [cross-book asset graph contract](references/cross-book-asset-graph.md).
 
 ## What it helps you do
 
@@ -99,7 +117,7 @@ python scripts/token_usage.py record novels/<novel-name> --route novel --step ch
 python scripts/token_usage.py summarize novels/<novel-name> --write
 ```
 
-`novels/`, `analyses/`, and `trends/` are ignored by default to protect private manuscripts, source texts, and research snapshots.
+`novels/`, `analyses/`, `trends/`, and `libraries/` are ignored by default to protect private manuscripts, source texts, research snapshots, and asset libraries.
 
 ## Clear boundaries
 
@@ -115,4 +133,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-The Codex-native production controller now initializes and migrates schema-v3 workspaces, returns one recoverable next action, protects author edits, advances approved chapter ranges serially, records per-call Token availability, creates checkpoints, and exports stable prose. Codex remains the only creative engine; no provider API, web application, database authority, or custom agent runtime is required.
+The private, Git-ignored cross-book asset graph now lets schema-v3 books import finalized reusable assets and shared-IP canon as an independent `fork` or protected `sync` link. Sync reports updates or conflicts without overwriting prose; canon changes require explicit author approval or a revocable per-asset Codex delegation. Graph results stay bounded candidates, while YAML/Markdown remains authoritative. The Codex-native controller continues to provide recovery, protected author edits, serial chapter progression, Token diagnostics, checkpoints, and stable export. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.

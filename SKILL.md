@@ -9,6 +9,10 @@ description: Produce, maintain, analyze, and export long-form Chinese novels thr
 
 Help a novice author move from a vague idea toward a complete long-form novel. Produce concrete, editable artifacts; preserve author decisions; and recommend one clear next step.
 
+## Codex-Native Execution Boundary
+
+**Codex is the only engine for creative understanding, planning, generation, review, and judgment.** This Skill is the process contract; Python scripts perform only deterministic state transitions, validation, indexing, conflict detection, and export. This repository is not an `AI-Novel-Writing-Assistant` runtime or submodule: do not add provider SDKs, Web APIs, database authorities, queues, or a custom agent runtime. `provider` and `model` fields are Token diagnostics only when the Codex host exposes them, never a generation dependency.
+
 For a completely vague request to create a novel, do **not** generate a full premise, hook package, cast, or chapter first. Use exactly three first-round choices: (1) audience channel, with male-oriented, female-oriented, broad-audience, and AI-recommended options; (2) publishing shape, with paid serial, free serial, and undecided options; and (3) genre or primary reader reward, with 2–4 concrete content options. Do not ask about protagonist, style, or length in this first round. Then wait for confirmation or AI delegation before formal planning.
 
 Use Markdown for creative artifacts and a small `novel-state.yaml` file for progress. In a legacy workspace, keep continuity ledgers as readable Markdown. In a migrated workspace, YAML is the sole continuity authority and Markdown ledgers are generated read-only views; SQLite is a disposable local index. Do not require JSON unless the user explicitly requests machine integration or export.
@@ -71,6 +75,8 @@ Read [artifact-contracts.md](references/artifact-contracts.md) before creating a
 Read [token-usage.md](references/token-usage.md) before recording or reporting model usage. In workspace mode, account for every actual model generation call as `exact`, `estimated`, or `unavailable`; never invent a number when the runtime does not expose usage.
 
 Read [generation-contracts.md](references/generation-contracts.md) before running or changing the full production chain. Read [auto-director-and-recovery.md](references/auto-director-and-recovery.md) when the user delegates decisions, requests a chapter range, resumes an interrupted run, reaches a milestone approval, or encounters a blocking condition.
+
+Read [cross-book-asset-graph.md](references/cross-book-asset-graph.md) before publishing, importing, syncing, or resolving reusable assets or shared-IP canon. Only schema-v3 workspaces may link cross-book assets; graph results are candidates and the referenced YAML/Markdown remains authoritative.
 
 In a schema-v3 workspace, use `scripts/novelctl.py` as the deterministic control surface for state transitions, validation, recovery, context, checkpoints, usage, and export. Codex remains the only creative generation engine; do not add or invoke a model-provider SDK from this skill.
 

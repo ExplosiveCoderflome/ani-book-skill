@@ -14,12 +14,15 @@ class CodexNativeWorkflowDocsTests(unittest.TestCase):
             "docs/plans/codex-native-novel-production-system.md",
             "references/generation-contracts.md",
             "references/auto-director-and-recovery.md",
+            "references/cross-book-asset-graph.md",
             "scripts/novelctl.py",
+            "scripts/asset_graph.py",
         ):
             self.assertTrue((ROOT / relative).is_file(), relative)
         self.assertIn("references/generation-contracts.md", skill)
         self.assertIn("references/auto-director-and-recovery.md", skill)
         self.assertIn("scripts/novelctl.py", skill)
+        self.assertIn("references/cross-book-asset-graph.md", skill)
 
     def test_complete_serial_generation_chain_is_documented(self) -> None:
         contract = (ROOT / "references" / "generation-contracts.md").read_text(encoding="utf-8")
@@ -43,8 +46,12 @@ class CodexNativeWorkflowDocsTests(unittest.TestCase):
 
     def test_project_keeps_the_codex_only_boundary(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
         self.assertIn("Codex is the only creative", agents)
+        self.assertIn("Codex is the only engine for creative", skill)
+        self.assertIn("Codex 本身是唯一的创作理解", readme)
         for forbidden in ("openai==", "anthropic", "litellm", "langchain"):
             self.assertNotIn(forbidden, requirements)
 
