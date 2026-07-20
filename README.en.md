@@ -3,21 +3,41 @@
 [![Validate](https://github.com/ExplosiveCoderflome/ani-book-skill/actions/workflows/validate.yml/badge.svg)](https://github.com/ExplosiveCoderflome/ani-book-skill/actions/workflows/validate.yml)
 [中文](README.md) · [Changelog](docs/releases/release-notes.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-> Turn “I want to write a long novel” into a writing system that can keep going.
+> Use Codex to turn an idea, chapters, continuity, and cross-book canon into a novel-production system that can keep going.
 
 Current version: `0.3.0` (2026-07-21)
 
-**Ani Book Skill** is a Codex workflow for long-form Chinese fiction. It connects market research, story design, chapter production, revision, and durable continuity into a local, recoverable process—so an author can still know what matters when the manuscript is dozens of chapters deep.
+**Ani Book Skill** is a Codex-native production system for long-form Chinese fiction. It turns a rough idea into a story engine, volume and chapter plans, stable prose, durable continuity, reusable assets, and shared-IP canon.
+
+It is built for the three long-form problems that one-off prompting does not solve: why a chapter matters, how facts stay stable across dozens of chapters, and how multiple books safely reuse and govern a shared universe.
 
 ## Codex-native, not another agent runtime
 
 **Codex itself is the only engine for creative understanding, planning, generation, review, and judgment.** The Skill is the process contract; Python performs only deterministic state, validation, indexing, conflict detection, and export. This is not an `AI-Novel-Writing-Assistant` runtime or submodule: it does not add a model-provider SDK, Web API, database authority, queue, or custom agent runtime. Provider/model fields are Token diagnostics only when exposed by the Codex host.
 
+```text
+Codex: story understanding, relationships, planning, writing, review, impact judgment
+  -> Skill/contracts: required inputs, outputs, and acceptance rules
+  -> Python: deterministic validation, evidence, conflict protection, rebuildable indexes
+  -> Markdown/YAML authority; JSONL/SQLite disposable derivatives
+```
+
 ![Ani Book Skill workflow: idea and research, story architecture, drafting and review, continuity storage, and the next chapter loop](assets/workflow-hero.png)
 
-*From the first spark to the next chapter: every commit makes the novel more coherent, not the context more chaotic.*
+*From the first spark to shared canon: every accepted change remains traceable instead of making context more chaotic.*
 
-## The core workflow — make every chapter strengthen the next
+## What is production-ready now
+
+| Layer | What you get | What stays protected |
+| --- | --- | --- |
+| **Idea to chapter** | Reader promise, story engine, plans, prose, revision, and review | Progressive confirmation, chapter obligations, and quality debt |
+| **Long-form continuity** | Recoverable facts, promises, resources, character state, and relationships | Only accepted material enters durable memory; user edits are never overwritten |
+| **Cross-book knowledge graph** | Reusable mechanisms, shared entities, canon events, and impact reports | Every node has evidence and a fingerprint; graph results remain candidates |
+| **Shared-IP governance** | `fork` / `sync`, canon candidates, explicit publishing, revocable delegation | Conflicts do not overwrite prose; impact review never bulk-updates books |
+
+Start from an idea when you are new to a novel, or resume from an existing workspace and asset library when maintaining a series. The system always exposes one recoverable next step rather than asking you to assemble prompts and context manually.
+
+## The production chain — stabilize prose, continuity, and assets together
 
 This is not a linear “generate another passage” chat. It is a production loop that calibrates, accumulates, and recovers after every accepted chapter:
 
@@ -34,9 +54,9 @@ Direction → story engine → chapter plan → complete prose → review and co
     └──────────────── continuity state and next chapter ───┘
 ```
 
-**The key rule: stabilize one chapter at a time.** No stitched parallel fragments, no unreviewed candidates becoming facts, and no need to load the entire novel into the next context.
+**The key rule: stabilize one chapter at a time.** No stitched parallel fragments, no unreviewed candidates becoming facts, and no need to load the entire novel into the next context. Only accepted material can become a cross-book asset or a shared-universe event candidate.
 
-## Cross-book asset graph (phases one through three)
+## Cross-book knowledge graph and shared universe
 
 The private, Git-ignored `libraries/` folder can hold finalized reusable assets (`reusable`) and shared-IP canon (`universe`). A schema-v3 book imports each asset as either a standalone `fork` or protected `sync` link. Synchronization only reports an update or conflict—it never overwrites prose. The author explicitly keeps the local version, adopts shared canon, or approves/delegates a canon update.
 
