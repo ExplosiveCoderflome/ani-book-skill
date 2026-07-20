@@ -19,6 +19,8 @@ from typing import Any, Iterable
 
 import yaml
 
+import asset_graph
+import continuity_store
 import token_usage
 
 
@@ -545,6 +547,16 @@ def command_status(args: argparse.Namespace) -> int:
             counts[artifact.get("status")] = counts.get(artifact.get("status"), 0) + 1
             if artifact.get("protected"):
                 protected.append(key)
+    cross_book_assets: dict[str, int] = {}
+    if (workspace / "continuity" / "data").is_dir():
+        try:
+            links = continuity_store.load_store(workspace).get("asset_links", [])
+            for link in links:
+                if isinstance(link, dict):
+                    status = str(link.get("status", "unknown"))
+                    cross_book_assets[status] = cross_book_assets.get(status, 0) + 1
+        except ValueError:
+            cross_book_assets["invalid"] = 1
     result = {
         "title": state.get("novel", {}).get("title"),
         "schema_version": state.get("schema_version"),
@@ -552,6 +564,7 @@ def command_status(args: argparse.Namespace) -> int:
         "artifact_counts": counts,
         "protected_artifacts": sorted(protected),
         "continuity": state.get("continuity"),
+        "cross_book_assets": cross_book_assets,
         "usage": state.get("usage"),
         "next_action": decide_next(state),
     }
@@ -562,6 +575,7 @@ def command_status(args: argparse.Namespace) -> int:
         print(f"- Schema：{result['schema_version']}")
         print(f"- 导演状态：{(result['director'] or {}).get('status', 'legacy')}")
         print(f"- 最后连续性章节：{(result['continuity'] or {}).get('last_committed_chapter') or '无'}")
+        print(f"- 跨书资产：{result['cross_book_assets'] or '无'}")
         print(f"- 受保护产物：{len(protected)}")
         print(f"- 下一步：{result['next_action']['type']} / {result['next_action']['target']}")
         print(f"- 原因：{result['next_action']['reason']}")
@@ -642,12 +656,23 @@ def ensure_dependencies_ready(artifacts: dict[str, Any], dependencies: Iterable[
             raise ValueError(f"dependency awaits milestone approval: {dependency}")
 
 
+def validate_chapter_asset_preflight(workspace: Path, target: str) -> None:
+    number = chapter_number(target)
+    if number is None:
+        return
+    selection = asset_graph.default_selection_path(workspace, number)
+    if selection.is_file():
+        asset_graph.validate_asset_selection(workspace, selection)
+
+
 def command_start_step(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
     require_v3(state)
     if not SAFE_NAME.fullmatch(args.step):
         raise ValueError("step has invalid format")
+    if args.step in {"context_package", "chapter_draft", "chapter_review"}:
+        validate_chapter_asset_preflight(workspace, args.target)
     if args.step == "novel_brief" and not opening_choices_ready(state):
         raise ValueError("confirm channel, publication format, and primary reader reward before novel_brief")
     key = artifact_key(args.step, args.target)
@@ -858,11 +883,31 @@ def run_script(name: str, arguments: list[str]) -> int:
 
 def command_context(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
+    if bool(args.asset_library) != bool(args.asset_selection):
+        raise ValueError("--asset-library and --asset-selection must be used together")
+    asset_context = ""
+    asset_budget = 0
+    if args.asset_library:
+        if not (workspace / "continuity" / "data").is_dir():
+            raise ValueError("cross-book context requires a migrated structured continuity store")
+        selection = workspace / safe_relative_path(args.asset_selection)
+        asset_budget = min(2500, args.max_chars * 35 // 100)
+        asset_context = asset_graph.render_selection_context(args.asset_library.resolve(), workspace, selection, asset_budget)
     if (workspace / "continuity" / "data").is_dir():
-        forwarded = ["assemble-context", str(workspace), "--chapter", str(args.chapter), "--max-chars", str(args.max_chars)]
-        if args.characters:
-            forwarded += ["--characters", args.characters]
-        return run_script("continuity_store.py", forwarded)
+        characters = {item.strip() for item in args.characters.split(",") if item.strip()}
+        rendered = continuity_store.assemble_context(workspace, args.chapter, characters, args.max_chars - asset_budget)
+        if asset_context:
+            rendered = rendered.rstrip() + "\n\n" + asset_context
+        if args.output:
+            relative_output = safe_relative_path(args.output)
+            atomic_write_text(workspace / relative_output, rendered)
+            sources = ["continuity/data/*.yaml"] + ([safe_relative_path(args.asset_selection)] if args.asset_selection else [])
+            print(json.dumps({"written": relative_output, "sources": sources, "asset_budget": asset_budget}, ensure_ascii=False, indent=2))
+        else:
+            print(rendered, end="")
+        return 0
+    if args.asset_library:
+        raise ValueError("cross-book context requires a migrated structured continuity store")
     state = read_state(workspace)
     number = args.chapter
     selected: list[tuple[str, str]] = []
@@ -1024,6 +1069,8 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--characters", default="")
     context.add_argument("--max-chars", type=int, default=9000)
     context.add_argument("--output")
+    context.add_argument("--asset-library", type=Path)
+    context.add_argument("--asset-selection", help="workspace-relative context-packages/chapter-XXX.assets.yaml")
     context.set_defaults(handler=command_context)
 
     checkpoint = commands.add_parser("checkpoint", help="create a structured continuity checkpoint")

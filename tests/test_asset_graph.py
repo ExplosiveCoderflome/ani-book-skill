@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "asset_graph.py"
+NOVELCTL = ROOT / "scripts" / "novelctl.py"
 
 
 class AssetGraphCliTests(unittest.TestCase):
@@ -26,9 +28,23 @@ class AssetGraphCliTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    @staticmethod
+    def digest(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
     def run_cli(self, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(SCRIPT), *map(str, arguments)],
+            cwd=ROOT,
+            check=check,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+
+    def run_novelctl(self, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(NOVELCTL), *map(str, arguments)],
             cwd=ROOT,
             check=check,
             capture_output=True,
@@ -93,6 +109,27 @@ class AssetGraphCliTests(unittest.TestCase):
     def init_library(self) -> None:
         result = self.run_cli("init", self.library)
         self.assertEqual(1, json.loads(result.stdout)["manifest"]["revision"])
+
+    def write_selection(self, asset_id: str, *, purpose: str = "本章必须遵守该机制。", constraints: list[str] | None = None) -> Path:
+        link = yaml.safe_load((self.workspace / "continuity/data/asset-links.yaml").read_text(encoding="utf-8"))[0]
+        selection = {
+            "schema_version": 1,
+            "chapter": "chapter-001",
+            "assets": [{
+                "asset_id": asset_id,
+                "purpose": purpose,
+                "constraints": constraints or ["不得改变既有规则。"],
+                "mode": link["mode"],
+                "library_version": link["library_version"],
+                "library_hash": link["library_hash"],
+                "local_path": link["local_path"],
+                "local_hash": link["local_hash"],
+            }],
+        }
+        path = self.workspace / "context-packages/chapter-001.assets.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(selection, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        return path
 
     def test_rejects_unaccepted_candidates_and_requires_author_approval(self) -> None:
         self.init_library()
@@ -183,6 +220,83 @@ class AssetGraphCliTests(unittest.TestCase):
         invalid = self.run_cli("validate", self.library, check=False)
         self.assertNotEqual(0, invalid.returncode)
         self.assertIn("content_sha256", invalid.stderr)
+
+    def test_selection_context_is_pinned_bounded_and_blocks_conflicts(self) -> None:
+        self.init_library()
+        self.run_cli("publish", self.library, self.candidate("ASSET-SYNC"), "--author-approved")
+        self.run_cli("import", self.library, self.workspace, "ASSET-SYNC", "--mode", "sync")
+        selection = self.write_selection("ASSET-SYNC")
+        validated = json.loads(self.run_cli("validate-selection", self.library, self.workspace, selection).stdout)
+        self.assertEqual(1, validated["assets"])
+        context = self.run_novelctl(
+            "context", self.workspace, "--chapter", "1", "--max-chars", "1000",
+            "--asset-library", self.library, "--asset-selection", selection.relative_to(self.workspace),
+        )
+        self.assertLessEqual(len(context.stdout), 1000)
+        self.assertIn("ASSET-SYNC", context.stdout)
+        self.assertIn("固定版本", context.stdout)
+        self.assertIn("cross-book-assets/ASSET-SYNC.yaml", context.stdout)
+
+        local = self.workspace / "cross-book-assets/ASSET-SYNC.yaml"
+        local.write_text(local.read_text(encoding="utf-8") + "# 本书冲突\n", encoding="utf-8")
+        self.run_cli("reconcile", self.library, self.workspace)
+        status = json.loads(self.run_novelctl("status", self.workspace).stdout)
+        self.assertEqual(1, status["cross_book_assets"]["conflict"])
+        invalid = self.run_cli("validate-selection", self.library, self.workspace, selection, check=False)
+        self.assertNotEqual(0, invalid.returncode)
+        self.assertIn("sync conflict", invalid.stderr)
+        blocked = self.run_novelctl(
+            "start-step", self.workspace, "--step", "context_package", "--target", "chapter_001",
+            "--artifact", "context-packages/chapter-001.md", check=False,
+        )
+        self.assertEqual(2, blocked.returncode)
+        self.assertIn("sync conflict", blocked.stderr)
+        self.assertIn("本书冲突", local.read_text(encoding="utf-8"))
+
+    def test_selection_rejects_unimported_assets_and_keeps_update_available_snapshot(self) -> None:
+        self.init_library()
+        self.run_cli("publish", self.library, self.candidate("ASSET-SYNC"), "--author-approved")
+        self.run_cli("import", self.library, self.workspace, "ASSET-SYNC", "--mode", "sync")
+        selection = self.write_selection("ASSET-SYNC")
+        original = (self.workspace / "cross-book-assets/ASSET-SYNC.yaml").read_text(encoding="utf-8")
+        updated = yaml.safe_load(self.candidate("ASSET-SYNC").read_text(encoding="utf-8"))
+        updated["content"]["rule"] = "共享版本已更新。"
+        update_path = self.root / "updated.yaml"
+        update_path.write_text(yaml.safe_dump(updated, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        self.run_cli("publish", self.library, update_path, "--author-approved")
+        self.run_cli("reconcile", self.library, self.workspace)
+        context = self.run_cli("selection-context", self.library, self.workspace, selection, "--max-chars", "800")
+        self.assertIn("共享库有新版本", context.stdout)
+        self.assertEqual(original, (self.workspace / "cross-book-assets/ASSET-SYNC.yaml").read_text(encoding="utf-8"))
+
+        selection_data = yaml.safe_load(selection.read_text(encoding="utf-8"))
+        selection_data["assets"][0]["asset_id"] = "ASSET-NOT-IMPORTED"
+        selection.write_text(yaml.safe_dump(selection_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        rejected = self.run_cli("validate-selection", self.library, self.workspace, selection, check=False)
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertIn("unimported", rejected.stderr)
+
+    def test_post_commit_candidate_requires_staging_evidence_and_source_fingerprint(self) -> None:
+        self.init_library()
+        source = self.workspace / "chapters/chapter-001/draft.md"
+        staged = self.workspace / "production/asset-candidates/chapter-001/ASSET-FINAL.yaml"
+        staged.parent.mkdir(parents=True)
+        candidate = yaml.safe_load(self.candidate("ASSET-FINAL").read_text(encoding="utf-8"))
+        candidate["source"].update({
+            "workspace": self.workspace.name,
+            "artifact": "chapters/chapter-001/draft.md",
+            "artifact_sha256": self.digest(source),
+            "continuity_committed": True,
+        })
+        staged.write_text(yaml.safe_dump(candidate, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        verified = json.loads(self.run_cli("verify-candidate", self.workspace, staged).stdout)
+        self.assertTrue(verified["valid"])
+        published = self.run_cli("publish", self.library, staged, "--source-workspace", self.workspace, "--author-approved")
+        self.assertEqual("ASSET-FINAL", json.loads(published.stdout)["published"])
+        source.write_text("# 第一章\n\n被改动的正文。\n", encoding="utf-8")
+        rejected = self.run_cli("verify-candidate", self.workspace, staged, check=False)
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertIn("source artifact changed", rejected.stderr)
 
     def test_rejects_legacy_workspaces(self) -> None:
         self.init_library()

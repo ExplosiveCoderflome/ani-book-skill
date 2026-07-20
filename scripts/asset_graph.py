@@ -14,6 +14,7 @@ import tempfile
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any
 
 import yaml
@@ -33,6 +34,9 @@ GRAPH_INDEX = GRAPH_DIR / "asset-graph-index.sqlite3"
 WORKSPACE_ASSETS = Path("cross-book-assets")
 WORKSPACE_GRAPH = Path("continuity/graph")
 WORKSPACE_INDEX = WORKSPACE_GRAPH / "asset-graph-index.sqlite3"
+SELECTION_SCHEMA_VERSION = 1
+SELECTION_NAME = re.compile(r"^chapter-(\d{3,})\.assets\.yaml$")
+CHAPTER_NAME = re.compile(r"^chapter[-_](\d+)$")
 
 
 def configure_utf8_output() -> None:
@@ -212,7 +216,9 @@ def save_manifest(library: Path, manifest: dict[str, Any]) -> None:
     write_yaml(library_paths(library)["manifest"], manifest)
 
 
-def publish_asset(library: Path, candidate: Path, author_approved: bool) -> dict[str, Any]:
+def publish_asset(library: Path, candidate: Path, author_approved: bool, source_workspace: Path | None = None) -> dict[str, Any]:
+    if source_workspace is not None:
+        verify_candidate_source(source_workspace, candidate)
     manifest = load_manifest(library)
     assets = load_assets(library)
     asset = read_yaml(candidate)
@@ -303,6 +309,181 @@ def write_links(workspace: Path, links: list[dict[str, Any]]) -> None:
 
 def local_asset_path(workspace: Path, asset_id: str) -> Path:
     return workspace / WORKSPACE_ASSETS / f"{asset_id}.yaml"
+
+
+def workspace_relative(workspace: Path, value: str) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("workspace path must be relative and cannot contain '..'")
+    resolved = (workspace / candidate).resolve()
+    try:
+        resolved.relative_to(workspace.resolve())
+    except ValueError as error:
+        raise ValueError("workspace path escapes the novel workspace") from error
+    return resolved
+
+
+def default_selection_path(workspace: Path, chapter: int) -> Path:
+    if chapter < 1:
+        raise ValueError("chapter must be positive")
+    return workspace / "context-packages" / f"chapter-{chapter:03d}.assets.yaml"
+
+
+def selection_chapter(selection_path: Path) -> int:
+    matched = SELECTION_NAME.fullmatch(selection_path.name)
+    if not matched:
+        raise ValueError("asset selection must be named context-packages/chapter-XXX.assets.yaml")
+    return int(matched.group(1))
+
+
+def chapter_number(value: Any) -> int | None:
+    matched = CHAPTER_NAME.fullmatch(str(value or ""))
+    return int(matched.group(1)) if matched else None
+
+
+def read_selection(workspace: Path, selection_path: Path) -> dict[str, Any]:
+    resolved = selection_path.resolve()
+    try:
+        relative = resolved.relative_to(workspace.resolve())
+    except ValueError as error:
+        raise ValueError("asset selection must be inside the novel workspace") from error
+    if relative.parent.as_posix() != "context-packages":
+        raise ValueError("asset selection must be stored under context-packages/")
+    selection_chapter(resolved)
+    if not resolved.is_file():
+        raise ValueError(f"asset selection is missing: {relative.as_posix()}")
+    selection = read_yaml(resolved)
+    if not isinstance(selection, dict):
+        raise ValueError("asset selection must be a YAML mapping")
+    return selection
+
+
+def validate_asset_selection(workspace: Path, selection_path: Path) -> dict[str, Any]:
+    require_v3_workspace(workspace)
+    selection = read_selection(workspace, selection_path)
+    if selection.get("schema_version") != SELECTION_SCHEMA_VERSION:
+        raise ValueError("asset selection has unsupported schema_version")
+    chapter = selection_chapter(selection_path)
+    declared_chapter = chapter_number(selection.get("chapter"))
+    if declared_chapter != chapter:
+        raise ValueError("asset selection chapter does not match its filename")
+    selected = selection.get("assets")
+    if not isinstance(selected, list):
+        raise ValueError("asset selection assets must be a YAML list")
+    links = {str(link.get("asset_id")): link for link in read_links(workspace)}
+    seen: set[str] = set()
+    for position, item in enumerate(selected, 1):
+        label = f"asset selection assets[{position}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{label} must be a mapping")
+        for key in ("asset_id", "purpose", "constraints", "mode", "library_version", "library_hash", "local_path", "local_hash"):
+            if item.get(key) in (None, "", []):
+                raise ValueError(f"{label} missing {key}")
+        if not isinstance(item["purpose"], str) or not item["purpose"].strip():
+            raise ValueError(f"{label} purpose must be a non-empty string")
+        if not isinstance(item["constraints"], list) or not all(isinstance(value, str) and value.strip() for value in item["constraints"]):
+            raise ValueError(f"{label} constraints must be a non-empty list of strings")
+        asset_id = str(item["asset_id"])
+        if asset_id in seen:
+            raise ValueError(f"asset selection repeats asset id: {asset_id}")
+        seen.add(asset_id)
+        link = links.get(asset_id)
+        if link is None:
+            raise ValueError(f"asset selection references an unimported asset: {asset_id}")
+        if link.get("status") == "conflict":
+            raise ValueError(f"asset selection is blocked by sync conflict: {asset_id}")
+        if link.get("status") not in {"active", "update_available"}:
+            raise ValueError(f"asset selection references a non-active asset: {asset_id}")
+        for key in ("mode", "library_version", "library_hash", "local_path", "local_hash"):
+            if item.get(key) != link.get(key):
+                raise ValueError(f"asset selection {asset_id} has stale {key}")
+        local = workspace_relative(workspace, str(link["local_path"]))
+        if not local.is_file() or sha256(local) != link["local_hash"]:
+            raise ValueError(f"asset selection local snapshot changed or is missing: {asset_id}")
+        snapshot = read_yaml(local)
+        if not isinstance(snapshot, dict) or snapshot.get("id") != asset_id:
+            raise ValueError(f"asset selection local snapshot is invalid: {asset_id}")
+        if snapshot.get("content_sha256") != link["library_hash"]:
+            raise ValueError(f"asset selection local snapshot hash is invalid: {asset_id}")
+    return selection
+
+
+def validate_selection_with_library(library: Path, workspace: Path, selection_path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    selection = validate_asset_selection(workspace, selection_path)
+    assets = load_assets(library)
+    for item in selection["assets"]:
+        asset_id = str(item["asset_id"])
+        if asset_id not in assets:
+            raise ValueError(f"asset selection library asset is missing: {asset_id}")
+    return selection, assets
+
+
+def render_selection_context(library: Path, workspace: Path, selection_path: Path, max_chars: int) -> str:
+    if max_chars < 1:
+        raise ValueError("asset context budget must be positive")
+    selection, assets = validate_selection_with_library(library, workspace, selection_path)
+    links = {str(link["asset_id"]): link for link in read_links(workspace)}
+    selected_ids = {str(item["asset_id"]) for item in selection["assets"]}
+    lines = ["## 跨书资产：已锁定快照", "", "仅列出候选与权威回读路径；不得将图谱摘要直接当作事实。"]
+    for item in selection["assets"]:
+        asset_id = str(item["asset_id"])
+        link = links[asset_id]
+        update = "；共享库有新版本，本章仍固定使用本书快照" if link["status"] == "update_available" else ""
+        item_lines = [
+            f"- `{asset_id}`｜{item['purpose']}",
+            f"  - 约束：{'; '.join(str(value) for value in item['constraints'])}",
+            f"  - 固定版本：v{item['library_version']} / {item['mode']} / {item['library_hash']}",
+            f"  - 必须回读：`{item['local_path']}`{update}",
+        ]
+        if len("\n".join(lines + item_lines)) > max_chars:
+            break
+        lines.extend(item_lines)
+    neighbor_lines: list[str] = []
+    for asset_id in sorted(selected_ids):
+        for relation in assets[asset_id].get("relationships", []):
+            target = str(relation["target"])
+            if target in selected_ids or target not in assets:
+                continue
+            neighbor_lines.append(f"- 图谱候选 `{target}`：{relation['relation']}；仅可建议导入，未选中不得作为本章事实。")
+    if neighbor_lines and len("\n".join(lines + ["", "### 图谱邻域候选"] + neighbor_lines)) <= max_chars:
+        lines.extend(["", "### 图谱邻域候选", *neighbor_lines])
+    return ("\n".join(lines) + "\n")[:max_chars]
+
+
+def verify_candidate_source(workspace: Path, candidate_path: Path) -> dict[str, Any]:
+    require_v3_workspace(workspace)
+    resolved = candidate_path.resolve()
+    staging_root = (workspace / "production" / "asset-candidates").resolve()
+    try:
+        resolved.relative_to(staging_root)
+    except ValueError as error:
+        raise ValueError("asset candidate must be stored under production/asset-candidates/") from error
+    asset = read_yaml(resolved)
+    if not isinstance(asset, dict):
+        raise ValueError("asset candidate must be a YAML mapping")
+    errors = validate_asset(asset)
+    if errors:
+        raise ValueError("invalid candidate: " + "; ".join(errors))
+    source = asset["source"]
+    if source.get("continuity_committed") is not True:
+        raise ValueError("asset candidate source must declare continuity_committed: true")
+    source_chapter = chapter_number(source.get("chapter"))
+    store = continuity_store.load_store(workspace)
+    committed_chapter = chapter_number(store["manifest"].get("last_committed_chapter"))
+    if source_chapter is None or committed_chapter is None or source_chapter > committed_chapter:
+        raise ValueError("asset candidate source chapter is not committed")
+    expected_stage = f"chapter-{source_chapter:03d}"
+    if resolved.parent.name != expected_stage:
+        raise ValueError("asset candidate staging directory must match its source chapter")
+    artifact = workspace_relative(workspace, str(source["artifact"]))
+    expected_chapter_dir = Path("chapters") / expected_stage
+    try:
+        artifact.relative_to(workspace / expected_chapter_dir)
+    except ValueError as error:
+        raise ValueError("asset candidate source artifact must belong to its source chapter") from error
+    if not artifact.is_file() or sha256(artifact) != source["artifact_sha256"]:
+        raise ValueError("asset candidate source artifact changed or is missing")
+    return {"valid": True, "asset_id": asset["id"], "source_chapter": source["chapter"], "source_artifact": source["artifact"]}
 
 
 def make_link(asset: dict[str, Any], mode: str, local: Path, workspace: Path) -> dict[str, Any]:
@@ -589,6 +770,7 @@ def build_parser() -> argparse.ArgumentParser:
     publish.add_argument("library", type=Path)
     publish.add_argument("candidate", type=Path)
     publish.add_argument("--author-approved", action="store_true")
+    publish.add_argument("--source-workspace", type=Path, help="verify a staged post-commit candidate against this workspace")
     delegate = commands.add_parser("delegate", help="delegate or revoke Codex publication for one asset")
     delegate.add_argument("library", type=Path)
     delegate.add_argument("asset_id")
@@ -622,6 +804,18 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--assets", required=True, help="comma-separated active asset ids")
     context.add_argument("--max-depth", type=int, default=1)
     context.add_argument("--max-chars", type=int, default=4000)
+    selection = commands.add_parser("validate-selection", help="validate a chapter asset selection without writing")
+    selection.add_argument("library", type=Path)
+    selection.add_argument("workspace", type=Path)
+    selection.add_argument("selection", type=Path)
+    selection_context = commands.add_parser("selection-context", help="render bounded context for one validated selection")
+    selection_context.add_argument("library", type=Path)
+    selection_context.add_argument("workspace", type=Path)
+    selection_context.add_argument("selection", type=Path)
+    selection_context.add_argument("--max-chars", type=int, default=2500)
+    verify_candidate = commands.add_parser("verify-candidate", help="verify a staged post-commit asset candidate")
+    verify_candidate.add_argument("workspace", type=Path)
+    verify_candidate.add_argument("candidate", type=Path)
     return parser
 
 
@@ -635,7 +829,7 @@ def main() -> None:
             assets = load_assets(args.library.resolve())
             result = {"valid": True, "assets": len(assets)}
         elif args.command == "publish":
-            result = publish_asset(args.library.resolve(), args.candidate.resolve(), args.author_approved)
+            result = publish_asset(args.library.resolve(), args.candidate.resolve(), args.author_approved, args.source_workspace.resolve() if args.source_workspace else None)
         elif args.command == "delegate":
             result = set_delegation(args.library.resolve(), args.asset_id, args.enabled)
         elif args.command == "import":
@@ -652,6 +846,16 @@ def main() -> None:
             if args.depth < 1:
                 raise ValueError("graph depth must be at least 1")
             result = graph_neighbors(args.graph_root.resolve(), args.node, args.depth)
+        elif args.command == "validate-selection":
+            selection, _ = validate_selection_with_library(args.library.resolve(), args.workspace.resolve(), args.selection.resolve())
+            result = {"valid": True, "chapter": selection["chapter"], "assets": len(selection["assets"])}
+        elif args.command == "selection-context":
+            if args.max_chars < 1:
+                raise ValueError("asset context max chars must be positive")
+            print(render_selection_context(args.library.resolve(), args.workspace.resolve(), args.selection.resolve(), args.max_chars), end="")
+            return
+        elif args.command == "verify-candidate":
+            result = verify_candidate_source(args.workspace.resolve(), args.candidate.resolve())
         else:
             if args.max_depth < 1 or args.max_chars < 500:
                 raise ValueError("context depth must be at least 1 and max chars at least 500")
