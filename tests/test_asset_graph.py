@@ -80,12 +80,12 @@ class AssetGraphCliTests(unittest.TestCase):
         for name, value in payloads.items():
             (data / name).write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
-    def candidate(self, asset_id: str, *, namespace: str = "reusable", governance: str = "author_approval", relationships: list[dict] | None = None, accepted: bool = True) -> Path:
+    def candidate(self, asset_id: str, *, namespace: str = "reusable", governance: str = "author_approval", relationships: list[dict] | None = None, accepted: bool = True, kind: str | None = None, content: dict | None = None) -> Path:
         path = self.root / f"{asset_id}.yaml"
         value = {
             "id": asset_id,
             "namespace": namespace,
-            "kind": "mechanism" if namespace == "reusable" else "world_rule",
+            "kind": kind or ("mechanism" if namespace == "reusable" else "world_rule"),
             "title": f"{asset_id} 标题",
             "summary": f"{asset_id} 的可复用摘要。",
             "version": 1,
@@ -100,11 +100,28 @@ class AssetGraphCliTests(unittest.TestCase):
                 "evidence": "已验收正文中的明确机制。",
                 "accepted": accepted,
             },
-            "content": {"rule": "只作为创作约束，不替代本书事实。"},
+            "content": content or {"rule": "只作为创作约束，不替代本书事实。"},
             "relationships": relationships or [],
         }
         path.write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=False), encoding="utf-8")
         return path
+
+    def event_candidate(self, asset_id: str, sequence: int, participants: list[str], *, precedes: list[str] | None = None, follows: list[str] | None = None, governance: str = "author_approval") -> Path:
+        return self.candidate(
+            asset_id,
+            namespace="universe",
+            kind="event",
+            governance=governance,
+            content={
+                "canon": {
+                    "sequence": sequence,
+                    "participants": participants,
+                    "effects": f"{asset_id} 对共享宇宙造成的已定稿影响。",
+                    "precedes": precedes or [],
+                    "follows": follows or [],
+                },
+            },
+        )
 
     def init_library(self) -> None:
         result = self.run_cli("init", self.library)
@@ -307,6 +324,71 @@ class AssetGraphCliTests(unittest.TestCase):
         result = self.run_cli("import", self.library, legacy, "ASSET-ONE", "--mode", "fork", check=False)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("schema v3", result.stderr)
+
+    def test_universe_delegation_is_revocable_and_does_not_change_reusable_governance(self) -> None:
+        self.init_library()
+        legacy_manifest = yaml.safe_load((self.library / "library.yaml").read_text(encoding="utf-8"))
+        legacy_manifest.pop("universe_id")
+        legacy_manifest.pop("universe_governance")
+        (self.library / "library.yaml").write_text(yaml.safe_dump(legacy_manifest, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        delegated = json.loads(self.run_cli("delegate-universe", self.library, "--enabled").stdout)
+        self.assertEqual("libraries", delegated["universe_id"])
+        self.assertEqual("codex_delegated", delegated["governance"])
+
+        self.run_cli("publish", self.library, self.candidate("CHAR-ONE", namespace="universe", kind="character"))
+        reusable = self.run_cli("publish", self.library, self.candidate("REUSE-ONE"), check=False)
+        self.assertNotEqual(0, reusable.returncode)
+        self.assertIn("author-approved", reusable.stderr)
+
+        revoked = json.loads(self.run_cli("delegate-universe", self.library).stdout)
+        self.assertEqual("author_approval", revoked["governance"])
+        blocked = self.run_cli("publish", self.library, self.event_candidate("EVENT-ONE", 10, ["CHAR-ONE"]), check=False)
+        self.assertNotEqual(0, blocked.returncode)
+        self.assertIn("author-approved", blocked.stderr)
+        published = json.loads(self.run_cli("publish", self.library, self.event_candidate("EVENT-ONE", 10, ["CHAR-ONE"]), "--author-approved").stdout)
+        self.assertEqual("EVENT-ONE", published["published"])
+
+    def test_canon_timeline_rejects_invalid_endpoints_and_preserves_same_sequence_order(self) -> None:
+        self.init_library()
+        missing = self.run_cli("publish", self.library, self.event_candidate("EVENT-MISSING", 1, ["CHAR-MISSING"]), "--author-approved", check=False)
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("unpublished asset", missing.stderr)
+        self.run_cli("publish", self.library, self.candidate("CHAR-ONE", namespace="universe", kind="character"), "--author-approved")
+        self.run_cli("publish", self.library, self.event_candidate("EVENT-B", 10, ["CHAR-ONE"]), "--author-approved")
+        self.run_cli("publish", self.library, self.event_candidate("EVENT-A", 10, ["CHAR-ONE"]), "--author-approved")
+        reversed_order = self.run_cli("publish", self.library, self.event_candidate("EVENT-C", 5, ["CHAR-ONE"], follows=["EVENT-A"]), "--author-approved", check=False)
+        self.assertNotEqual(0, reversed_order.returncode)
+        self.assertIn("sequence contradicts precedence", reversed_order.stderr)
+        checked = json.loads(self.run_cli("canon-check", self.library).stdout)
+        self.assertTrue(checked["valid"])
+        timeline = json.loads(self.run_cli("timeline", self.library).stdout)
+        self.assertEqual(["EVENT-A", "EVENT-B"], [item["event_id"] for item in timeline["events"]])
+        graph = json.loads(self.run_cli("build", self.library).stdout)
+        self.assertEqual(2, graph["edges"])
+
+    def test_impact_reports_only_explicit_workspace_links_selections_and_timeline_neighbors(self) -> None:
+        self.init_library()
+        self.run_cli("publish", self.library, self.candidate("CHAR-ONE", namespace="universe", kind="character"), "--author-approved")
+        self.run_cli("publish", self.library, self.event_candidate("EVENT-ONE", 10, ["CHAR-ONE"]), "--author-approved")
+        self.run_cli("import", self.library, self.workspace, "CHAR-ONE", "--mode", "sync")
+        selection = self.write_selection("CHAR-ONE")
+        before_link = (self.workspace / "continuity/data/asset-links.yaml").read_bytes()
+        before_selection = selection.read_bytes()
+        candidate = yaml.safe_load(self.candidate("CHAR-ONE", namespace="universe", kind="character").read_text(encoding="utf-8"))
+        candidate["content"]["rule"] = "候选中的共享角色更新，必须先审查影响。"
+        update = self.root / "CHAR-ONE-update.yaml"
+        update.write_text(yaml.safe_dump(candidate, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        report = json.loads(self.run_cli("impact", self.library, update, "--workspace", self.workspace).stdout)
+        self.assertTrue(report["review_required"])
+        self.assertTrue(report["writes"] is False)
+        self.assertEqual(["EVENT-ONE"], [entry["event_id"] for entry in report["timeline_events"]])
+        self.assertEqual("CHAR-ONE", report["workspaces"][0]["links"][0]["asset_id"])
+        self.assertEqual("requires_canon_review", report["workspaces"][0]["chapter_selections"][0]["risk"])
+        self.assertEqual(before_link, (self.workspace / "continuity/data/asset-links.yaml").read_bytes())
+        self.assertEqual(before_selection, selection.read_bytes())
+        event_report = json.loads(self.run_cli("impact", self.library, self.event_candidate("EVENT-TWO", 20, ["CHAR-ONE"]), "--workspace", self.workspace).stdout)
+        self.assertEqual("CHAR-ONE", event_report["workspaces"][0]["links"][0]["asset_id"])
+        self.assertEqual("CHAR-ONE", event_report["workspaces"][0]["chapter_selections"][0]["assets"][0])
 
 
 if __name__ == "__main__":

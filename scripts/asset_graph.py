@@ -37,6 +37,8 @@ WORKSPACE_INDEX = WORKSPACE_GRAPH / "asset-graph-index.sqlite3"
 SELECTION_SCHEMA_VERSION = 1
 SELECTION_NAME = re.compile(r"^chapter-(\d{3,})\.assets\.yaml$")
 CHAPTER_NAME = re.compile(r"^chapter[-_](\d+)$")
+EVENT_KIND = "event"
+CANON_RELATIONS = {"precedes", "follows"}
 
 
 def configure_utf8_output() -> None:
@@ -112,6 +114,8 @@ def init_library(library: Path) -> dict[str, Any]:
         "library_id": library.name,
         "visibility": "private",
         "creative_engine": "codex",
+        "universe_id": library.name,
+        "universe_governance": "author_approval",
         "revision": 1,
         "created_at": utc_now(),
     }
@@ -128,6 +132,12 @@ def load_manifest(library: Path) -> dict[str, Any]:
         raise ValueError("library.yaml has unsupported schema_version")
     if not isinstance(manifest.get("revision"), int) or manifest["revision"] < 1:
         raise ValueError("library.yaml revision must be a positive integer")
+    universe_id = manifest.setdefault("universe_id", manifest.get("library_id"))
+    if not isinstance(universe_id, str) or not universe_id.strip() or any(token in universe_id for token in ("/", "\\", "..")):
+        raise ValueError("library.yaml universe_id must be a stable id")
+    universe_governance = manifest.setdefault("universe_governance", "author_approval")
+    if universe_governance not in GOVERNANCE:
+        raise ValueError("library.yaml universe_governance is invalid")
     return manifest
 
 
@@ -153,8 +163,9 @@ def validate_asset(asset: Any, *, existing_ids: set[str] | None = None, publishe
         errors.append("asset governance must be author_approval or codex_delegated")
     if asset.get("visibility") != "private":
         errors.append("asset visibility must be private in the local library")
-    if asset.get("status") != "active":
-        errors.append("only active assets may be published")
+    valid_statuses = {"active", "retired"} if published else {"active"}
+    if asset.get("status") not in valid_statuses:
+        errors.append("only active assets may be published" if not published else "published asset status must be active or retired")
     if not isinstance(asset.get("version"), int) or asset.get("version", 0) < 1:
         errors.append("asset version must be a positive integer")
     if not isinstance(asset.get("content"), dict):
@@ -171,6 +182,8 @@ def validate_asset(asset: Any, *, existing_ids: set[str] | None = None, publishe
         for key in ("workspace", "artifact", "chapter", "artifact_sha256", "evidence"):
             if not str(source.get(key, "")).strip():
                 errors.append(f"asset source missing {key}")
+        if not isinstance(source.get("artifact_sha256"), str) or not re.fullmatch(r"[0-9a-fA-F]{64}", source["artifact_sha256"]):
+            errors.append("asset source artifact_sha256 must be a SHA-256 fingerprint")
         if source.get("accepted") is not True:
             errors.append("asset source must be accepted")
     relationships = asset.get("relationships", [])
@@ -192,6 +205,39 @@ def validate_asset(asset: Any, *, existing_ids: set[str] | None = None, publishe
     return errors
 
 
+def canon_event_errors(asset: dict[str, Any], assets: dict[str, dict[str, Any]], *, candidate: bool = False) -> list[str]:
+    if asset.get("namespace") != "universe" or asset.get("kind") != EVENT_KIND:
+        return []
+    canon = asset.get("content", {}).get("canon") if isinstance(asset.get("content"), dict) else None
+    if not isinstance(canon, dict):
+        return ["universe event content must include canon mapping"]
+    errors: list[str] = []
+    if not isinstance(canon.get("sequence"), int):
+        errors.append("universe event canon.sequence must be an integer")
+    participants = canon.get("participants")
+    if not isinstance(participants, list) or not participants or not all(isinstance(item, str) and item.strip() for item in participants):
+        errors.append("universe event canon.participants must be a non-empty list of asset ids")
+    if not isinstance(canon.get("effects"), str) or not canon["effects"].strip():
+        errors.append("universe event canon.effects must be a non-empty string")
+    for key in CANON_RELATIONS:
+        values = canon.get(key, [])
+        if not isinstance(values, list) or not all(isinstance(item, str) and item.strip() for item in values):
+            errors.append(f"universe event canon.{key} must be a list of event ids")
+    targets = list(participants or []) + list(canon.get("precedes", []) or []) + list(canon.get("follows", []) or [])
+    for target in targets:
+        referenced = assets.get(target)
+        if referenced is None or (candidate and target == asset.get("id")):
+            errors.append(f"universe event references unpublished asset {target}")
+            continue
+        if referenced.get("namespace") != "universe" or referenced.get("status") != "active":
+            errors.append(f"universe event references non-active universe asset {target}")
+            continue
+        if target in canon.get("precedes", []) or target in canon.get("follows", []):
+            if referenced.get("kind") != EVENT_KIND:
+                errors.append(f"universe event canon relation target is not an event: {target}")
+    return errors
+
+
 def load_assets(library: Path) -> dict[str, dict[str, Any]]:
     load_manifest(library)
     assets: dict[str, dict[str, Any]] = {}
@@ -206,6 +252,7 @@ def load_assets(library: Path) -> dict[str, dict[str, Any]]:
             raise ValueError(f"duplicate asset id {asset_id}")
         assets[asset_id] = asset
     errors = [error for asset in assets.values() for error in validate_asset(asset, existing_ids=set(assets), published=True)]
+    errors.extend(error for asset in assets.values() for error in canon_event_errors(asset, assets))
     if errors:
         raise ValueError("invalid library assets: " + "; ".join(errors))
     return assets
@@ -225,9 +272,17 @@ def publish_asset(library: Path, candidate: Path, author_approved: bool, source_
     if not isinstance(asset, dict):
         raise ValueError("candidate asset must be a mapping")
     errors = validate_asset(asset, existing_ids=set(assets) | {str(asset.get("id", ""))})
+    if isinstance(asset, dict):
+        errors.extend(canon_event_errors(asset, assets, candidate=True))
+        proposed = dict(assets)
+        proposed[str(asset.get("id", ""))] = asset
+        errors.extend(canon_topology_errors(proposed))
     if errors:
         raise ValueError("invalid candidate: " + "; ".join(errors))
-    if asset["governance"] == "author_approval" and not author_approved:
+    delegated = asset["governance"] == "codex_delegated" or (
+        asset["namespace"] == "universe" and manifest["universe_governance"] == "codex_delegated"
+    )
+    if not author_approved and not delegated:
         raise ValueError("author-approved assets require --author-approved")
     current = assets.get(asset["id"])
     asset["version"] = (current.get("version", 0) if current else 0) + 1
@@ -254,6 +309,14 @@ def set_delegation(library: Path, asset_id: str, enabled: bool) -> dict[str, Any
     return {"asset": asset_id, "governance": asset["governance"], "version": asset["version"]}
 
 
+def set_universe_delegation(library: Path, enabled: bool) -> dict[str, Any]:
+    manifest = load_manifest(library)
+    manifest["universe_governance"] = "codex_delegated" if enabled else "author_approval"
+    manifest["revision"] += 1
+    save_manifest(library, manifest)
+    return {"universe_id": manifest["universe_id"], "governance": manifest["universe_governance"], "revision": manifest["revision"]}
+
+
 def require_v3_workspace(workspace: Path) -> dict[str, Any]:
     state_path = workspace / "novel-state.yaml"
     if not state_path.is_file():
@@ -277,9 +340,13 @@ def ensure_asset_links(workspace: Path) -> None:
     write_yaml(path, [])
 
 
-def read_links(workspace: Path) -> list[dict[str, Any]]:
-    ensure_asset_links(workspace)
-    links = read_yaml(asset_links_path(workspace))
+def read_links(workspace: Path, *, create: bool = True) -> list[dict[str, Any]]:
+    path = asset_links_path(workspace)
+    if not path.is_file():
+        if not create:
+            return []
+        ensure_asset_links(workspace)
+    links = read_yaml(path)
     if not isinstance(links, list) or not all(isinstance(item, dict) for item in links):
         raise ValueError("asset-links.yaml must be a YAML list")
     return links
@@ -508,6 +575,8 @@ def import_asset(library: Path, workspace: Path, asset_id: str, mode: str) -> di
     asset = load_assets(library).get(asset_id)
     if asset is None:
         raise ValueError(f"asset not found: {asset_id}")
+    if asset.get("status") != "active":
+        raise ValueError(f"only active assets may be imported: {asset_id}")
     links = read_links(workspace)
     if any(link.get("asset_id") == asset_id and link.get("status") != "retired" for link in links):
         raise ValueError(f"asset already imported: {asset_id}")
@@ -590,6 +659,154 @@ def resolve(library: Path, workspace: Path, asset_id: str, action: str, author_a
     return {"resolved": asset_id, "action": action, "status": link["status"]}
 
 
+def universe_events(assets: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        asset_id: asset
+        for asset_id, asset in assets.items()
+        if asset.get("namespace") == "universe" and asset.get("kind") == EVENT_KIND and asset.get("status") == "active"
+    }
+
+
+def canon_precedence(events: dict[str, dict[str, Any]]) -> list[tuple[str, str]]:
+    edges: list[tuple[str, str]] = []
+    for event_id, event in events.items():
+        canon = event["content"]["canon"]
+        edges.extend((event_id, target) for target in canon.get("precedes", []))
+        edges.extend((target, event_id) for target in canon.get("follows", []))
+    return edges
+
+
+def canon_topology_errors(assets: dict[str, dict[str, Any]]) -> list[str]:
+    events = universe_events(assets)
+    errors: list[str] = []
+    edges = canon_precedence(events)
+    for source, target in edges:
+        if source not in events or target not in events:
+            errors.append(f"canon event relation has missing endpoint: {source} -> {target}")
+            continue
+        source_sequence = events[source]["content"]["canon"]["sequence"]
+        target_sequence = events[target]["content"]["canon"]["sequence"]
+        if source_sequence >= target_sequence:
+            errors.append(f"canon sequence contradicts precedence: {source} -> {target}")
+    adjacency: dict[str, list[str]] = {event_id: [] for event_id in events}
+    for source, target in edges:
+        if source in adjacency and target in adjacency:
+            adjacency[source].append(target)
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(event_id: str) -> None:
+        if event_id in visiting:
+            errors.append(f"canon event precedence cycle includes {event_id}")
+            return
+        if event_id in visited:
+            return
+        visiting.add(event_id)
+        for target in adjacency[event_id]:
+            visit(target)
+        visiting.remove(event_id)
+        visited.add(event_id)
+
+    for event_id in sorted(events):
+        visit(event_id)
+    return sorted(set(errors))
+
+
+def canon_check(library: Path) -> dict[str, Any]:
+    manifest = load_manifest(library)
+    assets = load_assets(library)
+    errors = canon_topology_errors(assets)
+    return {"valid": not errors, "universe_id": manifest["universe_id"], "events": len(universe_events(assets)), "errors": errors}
+
+
+def timeline(library: Path) -> dict[str, Any]:
+    checked = canon_check(library)
+    if not checked["valid"]:
+        raise ValueError("invalid canon: " + "; ".join(checked["errors"]))
+    assets = load_assets(library)
+    records: list[dict[str, Any]] = []
+    for event_id, event in universe_events(assets).items():
+        canon = event["content"]["canon"]
+        records.append({
+            "event_id": event_id,
+            "sequence": canon["sequence"],
+            "title": event["title"],
+            "participants": canon["participants"],
+            "effects": canon["effects"],
+            "precedes": canon.get("precedes", []),
+            "follows": canon.get("follows", []),
+            "version": event["version"],
+            "source": event["source"],
+        })
+    return {"universe_id": checked["universe_id"], "events": sorted(records, key=lambda item: (item["sequence"], item["event_id"]))}
+
+
+def candidate_for_review(library: Path, candidate_path: Path, source_workspace: Path | None = None) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    if source_workspace is not None:
+        verify_candidate_source(source_workspace, candidate_path)
+    assets = load_assets(library)
+    candidate = read_yaml(candidate_path)
+    if not isinstance(candidate, dict):
+        raise ValueError("candidate asset must be a mapping")
+    errors = validate_asset(candidate, existing_ids=set(assets) | {str(candidate.get("id", ""))})
+    errors.extend(canon_event_errors(candidate, assets, candidate=True))
+    proposed = dict(assets)
+    proposed[str(candidate.get("id", ""))] = candidate
+    errors.extend(canon_topology_errors(proposed))
+    if errors:
+        raise ValueError("invalid candidate: " + "; ".join(errors))
+    return candidate, assets
+
+
+def candidate_impact(library: Path, candidate_path: Path, workspaces: list[Path], source_workspace: Path | None = None) -> dict[str, Any]:
+    candidate, assets = candidate_for_review(library, candidate_path, source_workspace)
+    changed_ids = {str(candidate["id"])}
+    current = assets.get(str(candidate["id"]))
+    event_references: set[str] = set()
+    for event in (candidate, current):
+        if isinstance(event, dict) and event.get("namespace") == "universe" and event.get("kind") == EVENT_KIND:
+            canon = event.get("content", {}).get("canon", {})
+            if isinstance(canon, dict):
+                event_references.update(str(item) for item in canon.get("participants", []))
+                event_references.update(str(item) for item in canon.get("precedes", []))
+                event_references.update(str(item) for item in canon.get("follows", []))
+    affected_ids = changed_ids | event_references
+    impacted_events: list[dict[str, Any]] = []
+    for event_id, event in universe_events(assets).items():
+        canon = event["content"]["canon"]
+        references = {event_id, *canon.get("participants", []), *canon.get("precedes", []), *canon.get("follows", [])}
+        if changed_ids & references or event_references & {event_id}:
+            impacted_events.append({"event_id": event_id, "sequence": canon["sequence"], "reason": "direct canonical reference"})
+    worktree_reports: list[dict[str, Any]] = []
+    for workspace in workspaces:
+        resolved = workspace.resolve()
+        require_v3_workspace(resolved)
+        links = read_links(resolved, create=False)
+        impacted_links = [
+            {"asset_id": link.get("asset_id"), "mode": link.get("mode"), "status": link.get("status")}
+            for link in links if link.get("asset_id") in affected_ids
+        ]
+        selections: list[dict[str, Any]] = []
+        selection_root = resolved / "context-packages"
+        selection_paths = sorted(selection_root.glob("chapter-*.assets.yaml")) if selection_root.is_dir() else []
+        for path in selection_paths:
+            value = read_yaml(path)
+            chosen = value.get("assets", []) if isinstance(value, dict) else []
+            selected_ids = [item.get("asset_id") for item in chosen if isinstance(item, dict)]
+            matching = sorted(str(item) for item in selected_ids if item in affected_ids)
+            if matching:
+                selections.append({"path": path.relative_to(resolved).as_posix(), "assets": matching, "risk": "requires_canon_review"})
+        if impacted_links or selections:
+            worktree_reports.append({"workspace": str(resolved), "links": impacted_links, "chapter_selections": selections})
+    return {
+        "candidate": candidate["id"],
+        "review_required": bool(worktree_reports or impacted_events or event_references),
+        "timeline_events": sorted(impacted_events, key=lambda item: (item["sequence"], item["event_id"])),
+        "workspaces": worktree_reports,
+        "writes": False,
+    }
+
+
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     atomic_text(path, "".join(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records))
 
@@ -660,6 +877,15 @@ def build_library_graph(library: Path) -> dict[str, Any]:
     for asset in assets.values():
         for position, relation in enumerate(asset.get("relationships", []), 1):
             edges.append({"id": f"EDGE-{asset['id']}-{position}", "source": asset["id"], "target": relation["target"], "relation": relation["relation"], "evidence": relation["evidence"], "source_refs": [asset["source"]], "confidence": relation["confidence"], "status": "active", "version": asset["version"]})
+        if asset.get("namespace") == "universe" and asset.get("kind") == EVENT_KIND and asset.get("status") == "active":
+            canon = asset["content"]["canon"]
+            evidence = str(asset["source"].get("evidence", ""))
+            for position, target in enumerate(canon["participants"], 1):
+                edges.append({"id": f"EDGE-CANON-{asset['id']}-PARTICIPANT-{position}", "source": asset["id"], "target": target, "relation": "involves", "evidence": evidence, "source_refs": [asset["source"]], "confidence": 1.0, "status": "active", "version": asset["version"]})
+            for position, target in enumerate(canon.get("precedes", []), 1):
+                edges.append({"id": f"EDGE-CANON-{asset['id']}-PRECEDES-{position}", "source": asset["id"], "target": target, "relation": "precedes", "evidence": evidence, "source_refs": [asset["source"]], "confidence": 1.0, "status": "active", "version": asset["version"]})
+            for position, target in enumerate(canon.get("follows", []), 1):
+                edges.append({"id": f"EDGE-CANON-{asset['id']}-FOLLOWS-{position}", "source": target, "target": asset["id"], "relation": "precedes", "evidence": evidence, "source_refs": [asset["source"]], "confidence": 1.0, "status": "active", "version": asset["version"]})
     write_jsonl(paths["nodes"], nodes)
     write_jsonl(paths["edges"], edges)
     return build_sqlite(nodes, edges, paths["index"])
@@ -775,6 +1001,18 @@ def build_parser() -> argparse.ArgumentParser:
     delegate.add_argument("library", type=Path)
     delegate.add_argument("asset_id")
     delegate.add_argument("--enabled", action="store_true")
+    universe_delegate = commands.add_parser("delegate-universe", help="delegate or revoke Codex canon publication for this universe")
+    universe_delegate.add_argument("library", type=Path)
+    universe_delegate.add_argument("--enabled", action="store_true")
+    timeline_command = commands.add_parser("timeline", help="show the validated shared-universe canon timeline")
+    timeline_command.add_argument("library", type=Path)
+    canon_check_command = commands.add_parser("canon-check", help="validate shared-universe canon event ordering and endpoints")
+    canon_check_command.add_argument("library", type=Path)
+    impact_command = commands.add_parser("impact", help="report the explicit workspaces affected by a candidate without writing")
+    impact_command.add_argument("library", type=Path)
+    impact_command.add_argument("candidate", type=Path)
+    impact_command.add_argument("--workspace", type=Path, action="append", required=True, help="schema-v3 workspace to inspect; repeat for each workspace")
+    impact_command.add_argument("--source-workspace", type=Path, help="verify a staged post-commit candidate against this workspace")
     imported = commands.add_parser("import", help="import one asset into a schema-v3 novel workspace")
     imported.add_argument("library", type=Path)
     imported.add_argument("workspace", type=Path)
@@ -832,6 +1070,14 @@ def main() -> None:
             result = publish_asset(args.library.resolve(), args.candidate.resolve(), args.author_approved, args.source_workspace.resolve() if args.source_workspace else None)
         elif args.command == "delegate":
             result = set_delegation(args.library.resolve(), args.asset_id, args.enabled)
+        elif args.command == "delegate-universe":
+            result = set_universe_delegation(args.library.resolve(), args.enabled)
+        elif args.command == "timeline":
+            result = timeline(args.library.resolve())
+        elif args.command == "canon-check":
+            result = canon_check(args.library.resolve())
+        elif args.command == "impact":
+            result = candidate_impact(args.library.resolve(), args.candidate.resolve(), [workspace.resolve() for workspace in args.workspace], args.source_workspace.resolve() if args.source_workspace else None)
         elif args.command == "import":
             result = import_asset(args.library.resolve(), args.workspace.resolve(), args.asset_id, args.mode)
         elif args.command == "reconcile":
