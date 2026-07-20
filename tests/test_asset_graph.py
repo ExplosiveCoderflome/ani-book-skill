@@ -107,7 +107,7 @@ class AssetGraphCliTests(unittest.TestCase):
         return path
 
     def event_candidate(self, asset_id: str, sequence: int, participants: list[str], *, precedes: list[str] | None = None, follows: list[str] | None = None, governance: str = "author_approval") -> Path:
-        return self.candidate(
+        path = self.candidate(
             asset_id,
             namespace="universe",
             kind="event",
@@ -122,6 +122,10 @@ class AssetGraphCliTests(unittest.TestCase):
                 },
             },
         )
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+        value["source"]["continuity_committed"] = True
+        path.write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        return path
 
     def init_library(self) -> None:
         result = self.run_cli("init", self.library)
@@ -350,6 +354,13 @@ class AssetGraphCliTests(unittest.TestCase):
 
     def test_canon_timeline_rejects_invalid_endpoints_and_preserves_same_sequence_order(self) -> None:
         self.init_library()
+        uncommitted_path = self.event_candidate("EVENT-UNCOMMITTED", 1, ["CHAR-MISSING"])
+        uncommitted_value = yaml.safe_load(uncommitted_path.read_text(encoding="utf-8"))
+        uncommitted_value["source"].pop("continuity_committed")
+        uncommitted_path.write_text(yaml.safe_dump(uncommitted_value, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        uncommitted = self.run_cli("publish", self.library, uncommitted_path, "--author-approved", check=False)
+        self.assertNotEqual(0, uncommitted.returncode)
+        self.assertIn("continuity_committed", uncommitted.stderr)
         missing = self.run_cli("publish", self.library, self.event_candidate("EVENT-MISSING", 1, ["CHAR-MISSING"]), "--author-approved", check=False)
         self.assertNotEqual(0, missing.returncode)
         self.assertIn("unpublished asset", missing.stderr)

@@ -212,6 +212,9 @@ def canon_event_errors(asset: dict[str, Any], assets: dict[str, dict[str, Any]],
     if not isinstance(canon, dict):
         return ["universe event content must include canon mapping"]
     errors: list[str] = []
+    source = asset.get("source")
+    if not isinstance(source, dict) or source.get("continuity_committed") is not True:
+        errors.append("universe event source must declare continuity_committed: true")
     if not isinstance(canon.get("sequence"), int):
         errors.append("universe event canon.sequence must be an integer")
     participants = canon.get("participants")
