@@ -38,6 +38,7 @@ Direction → story engine → chapter plan → complete prose → review and co
 | Turn an idea into a serial engine | Confirm only the few creative choices that matter, then plan volumes and chapter obligations | Brief, bible, cast, volume plan, beats |
 | Keep chapters from drifting | Plan → bounded context → complete draft → humanization → review → continuity commit | Prose, review, delta, next action |
 | Keep long-running memory affordable | Treat YAML as authority and SQLite as a rebuildable index | Checkpoints, readable views, bounded context |
+| Understand model usage per step | Record every generation call without mixing exact, estimated, and unavailable measurements | Append-only usage ledger and step/model summaries |
 
 ## Why this is more than a prompt collection
 
@@ -79,11 +80,23 @@ python -m pip install -r requirements.txt
 ```
 
 ```powershell
+python scripts/novelctl.py init novels/<novel-name> --title "<novel-title>"
+python scripts/novelctl.py set-opening-choices novels/<novel-name> --channel "male-oriented" --publication-format "free serial" --primary-reader-reward "growth and reversals"
+python scripts/novelctl.py status novels/<novel-name> --format markdown
+python scripts/novelctl.py next novels/<novel-name>
+python scripts/novelctl.py migrate novels/<novel-name> --dry-run
+python scripts/novelctl.py migrate novels/<novel-name>
+python scripts/novelctl.py validate novels/<novel-name>
+python scripts/novelctl.py reconcile novels/<novel-name>
+python scripts/novelctl.py approve novels/<novel-name> --target chapter_range --range-start 1 --range-end 5
+python scripts/novelctl.py export novels/<novel-name>
 python scripts/export_novel_txt.py novels/<novel-name>
 python scripts/check_continuity_workspace.py novels/<novel-name>
 python scripts/continuity_store.py migrate novels/<novel-name> --dry-run
 python scripts/analysis_retrieval.py build analyses/<analysis-name>
 python scripts/trend_snapshot.py validate trends/<scope>/snapshots/<date>/<platform>-<chart>.jsonl
+python scripts/token_usage.py record novels/<novel-name> --route novel --step chapter_draft --measurement unavailable --reason runtime_usage_not_exposed
+python scripts/token_usage.py summarize novels/<novel-name> --write
 ```
 
 `novels/`, `analyses/`, and `trends/` are ignored by default to protect private manuscripts, source texts, and research snapshots.
@@ -99,3 +112,7 @@ python scripts/trend_snapshot.py validate trends/<scope>/snapshots/<date>/<platf
 This standalone, documentation-first Skill was distilled by the maintainer of [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant) from long-form production experience. It does not include or depend on that project's frontend, backend, database, or runtime services.
 
 Repository files are released under the [Apache License 2.0](LICENSE). See the [changelog](docs/releases/release-notes.md) for the latest updates.
+
+## Latest update
+
+The Codex-native production controller now initializes and migrates schema-v3 workspaces, returns one recoverable next action, protects author edits, advances approved chapter ranges serially, records per-call Token availability, creates checkpoints, and exports stable prose. Codex remains the only creative engine; no provider API, web application, database authority, or custom agent runtime is required.

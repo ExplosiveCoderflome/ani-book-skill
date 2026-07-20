@@ -68,6 +68,12 @@ When no workspace exists, remain in preview mode unless the user requests or con
 
 Read [artifact-contracts.md](references/artifact-contracts.md) before creating a workspace, changing artifact status, or deciding which downstream files become stale.
 
+Read [token-usage.md](references/token-usage.md) before recording or reporting model usage. In workspace mode, account for every actual model generation call as `exact`, `estimated`, or `unavailable`; never invent a number when the runtime does not expose usage.
+
+Read [generation-contracts.md](references/generation-contracts.md) before running or changing the full production chain. Read [auto-director-and-recovery.md](references/auto-director-and-recovery.md) when the user delegates decisions, requests a chapter range, resumes an interrupted run, reaches a milestone approval, or encounters a blocking condition.
+
+In a schema-v3 workspace, use `scripts/novelctl.py` as the deterministic control surface for state transitions, validation, recovery, context, checkpoints, usage, and export. Codex remains the only creative generation engine; do not add or invoke a model-provider SDK from this skill.
+
 ## Run the Production Loop
 
 Follow this artifact chain, stopping at the milestone the user requested:
@@ -80,8 +86,11 @@ For every step:
 2. Consume the authoritative upstream artifact rather than reconstructing it from chat history.
 3. Produce one coherent artifact or one bounded batch.
 4. Check its acceptance conditions.
-5. Update `novel-state.yaml` only after the artifact is usable.
-6. Report what was produced, what changed, what remains uncertain, and the recommended next action.
+5. Record the generation call in `production/token-usage.jsonl` before marking the artifact usable. Keep exact, estimated, and unavailable measurements distinct; do not count deterministic file or index operations.
+6. Update `novel-state.yaml` only after the artifact is usable.
+7. Report what was produced, what changed, the step's available Token usage, what remains uncertain, and the recommended next action.
+
+Book-level direction, the story engine, volume strategy, structural replanning, and any protected overwrite are milestone approvals by default. After the user approves a chapter range, continue serially within that range and stop at its end. A project-level AI delegation may satisfy these approvals until the user revokes it.
 
 Do not attempt to generate an entire long novel in one response. Advance through resumable milestones and keep each deliverable editable.
 
@@ -203,7 +212,7 @@ Do not discard a usable chapter because of a local style flaw. Do not create end
 
 ## Project Adapter Boundary
 
-This skill is a Codex writing workflow, not the runtime of `AI-Novel-Writing-Assistant-v2`. Read [ai-novel-writing-assistant-v2-adapter.md](references/ai-novel-writing-assistant-v2-adapter.md) only when the user asks to compare, align, import, export, or develop against that project.
+This skill is a Codex-native writing workflow, not the runtime of `AI-Novel-Writing-Assistant-v2`. Read [ai-novel-writing-assistant-v2-adapter.md](references/ai-novel-writing-assistant-v2-adapter.md) only when the user asks to compare, align, import, export, distill production ideas, or develop against that project.
 
 Do not directly operate its database, task queue, HTTP routes, or production runtime unless the user separately authorizes an implementation task.
 
@@ -219,4 +228,5 @@ End each completed production action with:
 - important assumptions or protected decisions;
 - quality or continuity risks;
 - state transition performed;
+- Token usage for the completed model-generation step, separated into exact, estimated, or unavailable;
 - one recommended next action.

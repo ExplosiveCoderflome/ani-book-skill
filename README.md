@@ -40,6 +40,7 @@
 | “我有设定，但不知道第一卷怎么拉住人。” | 用渐进确认锁定读者回报，再建立故事发动机、卷级承诺和章节职责 | 可编辑的简介、世界观、角色、卷纲与节奏板 |
 | “章节能写，但越写越散。” | 每章固定经过计划 → 上下文 → 完整正文 → 人性化二稿 → 审查 → 回灌 | 正文、审查、差分与唯一下一步 |
 | “写到五十章后，上下文会不会爆？” | YAML 保存权威事实，SQLite 只做可重建检索；按当前章筛选有限上下文 | 可恢复的连续性状态、检查点与只读台账视图 |
+| “每一步到底用了多少 Token？” | 每次模型生成调用独立记录，严格区分精确值、tokenizer 估算和运行时不可获取 | 追加式用量账本与按步骤、模型汇总 |
 
 ## 它和普通提示词有什么不同？
 
@@ -103,6 +104,24 @@ python -m pip install -r requirements.txt
 ```
 
 ```powershell
+# 从灵感建立 schema v3 工作区，并查看唯一下一步
+python scripts/novelctl.py init novels/<小说名> --title "<小说名>"
+python scripts/novelctl.py set-opening-choices novels/<小说名> --channel "男频" --publication-format "免费连载" --primary-reader-reward "成长与反转"
+python scripts/novelctl.py status novels/<小说名> --format markdown
+python scripts/novelctl.py next novels/<小说名>
+
+# 显式迁移旧工作区；正式迁移前会保留状态备份
+python scripts/novelctl.py migrate novels/<小说名> --dry-run
+python scripts/novelctl.py migrate novels/<小说名>
+
+# 恢复中断、校验用户编辑，并授权连续写作范围
+python scripts/novelctl.py validate novels/<小说名>
+python scripts/novelctl.py reconcile novels/<小说名>
+python scripts/novelctl.py approve novels/<小说名> --target chapter_range --range-start 1 --range-end 5
+
+# 导出所有稳定章节
+python scripts/novelctl.py export novels/<小说名>
+
 # 导出已完成章节
 python scripts/export_novel_txt.py novels/<小说名>
 
@@ -118,6 +137,10 @@ python scripts/analysis_retrieval.py build analyses/<名称>
 
 # 校验和比较榜单元数据快照
 python scripts/trend_snapshot.py validate trends/<范围>/snapshots/<日期>/<platform>-<chart>.jsonl
+
+# 记录并汇总一次模型生成调用的 Token 用量
+python scripts/token_usage.py record novels/<小说名> --route novel --step chapter_draft --measurement unavailable --reason runtime_usage_not_exposed
+python scripts/token_usage.py summarize novels/<小说名> --write
 ```
 
 `novels/`、`analyses/` 和 `trends/` 默认被忽略，避免把真实小说、来源文本或研究快照误推送到公开仓库。
@@ -138,9 +161,15 @@ python scripts/trend_snapshot.py validate trends/<范围>/snapshots/<日期>/<pl
 
 ## 最新更新
 
-### 2026-07-18
+### 2026-07-20
 
-- 新增工作流宣传图，以可视化方式呈现选题、故事架构、章节审查和长期连续性之间的闭环。
-- 将四阶段工作流置于首页核心位置，明确展示“方向判断 → 故事发动机 → 单章生产 → 连续性回灌”的闭环与单章稳定原则。
+重大更新：新增 Codex 原生长篇生产控制层与逐生成步骤 Token 记账。
+
+- `novelctl.py` 统一负责工作区初始化、唯一下一步、校验、恢复、步骤转换、上下文、检查点、用量和稳定正文导出。
+- `novel-state.yaml` 升级为 schema v3；旧 v1/v2 工作区只读兼容，必须显式迁移并先备份。
+- 用户修改过的正文和规划会被保护，其未写下游只标记为 `stale`，不会被自动覆盖。
+- 每次模型调用独立记账，失败和重试不会被最终产物总数掩盖。
+- 精确值、兼容 tokenizer 估算和不可获取事件严格分开，缓存与推理 Token 不重复累加。
+- 用量账本不进入小说创作上下文，不把 Token 数误当成质量或统一账单。
 
 完整历史见 [更新记录](docs/releases/release-notes.md)。

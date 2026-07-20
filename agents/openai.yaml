@@ -1,6 +1,6 @@
 interface:
   display_name: "长篇小说生产"
-  short_description: "热门题材分析、渐进设定确认、小说拆解、规划写作与导出"
-  default_prompt: "使用 $produce-long-form-novel 分阶段引导我确认关键设定，并推进长篇小说创作。"
+  short_description: "Codex 原生长篇规划、串行写作、恢复、Token 统计与导出"
+  default_prompt: "使用 $produce-long-form-novel 从当前工作区恢复唯一下一步，保护我的修改，并串行推进我授权的章节范围。"
 policy:
   allow_implicit_invocation: true

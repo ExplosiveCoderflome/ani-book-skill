@@ -2,6 +2,8 @@
 
 仅在用户明确要求与 `D:\code\AI-Novel-Writing-Assistant-v2` 对齐、导入、导出或开发集成时读取本页。
 
+该项目也可作为本 Skill 的只读生产经验来源。蒸馏时只迁移稳定的领域方法、产物合同、验收边界和恢复原则；不要复制运行时实现或制造源码依赖。
+
 ## 概念映射
 
 | Skill 产物 | 项目概念 |
@@ -36,6 +38,22 @@
 - 拆书总览先于其他小节生成并作为定位锚点；其他小节仍须由各自 notes 支撑。
 - 只续跑缺失或失败的小节，保留成功小节、来源范围、预算用量和证据绑定。
 - Skill 的事实/推断/假设、反例与覆盖地图是文件层增强项；导入项目时不得塞入不兼容字段，应先做显式映射。
+
+## 可蒸馏能力
+
+| 旧项目经验 | Skill 落点 |
+| --- | --- |
+| 自动导演阶段与恢复 | `auto-director-and-recovery.md`、`novel-state.yaml` 导演投影 |
+| Book Contract / Story Macro | `novel-brief.md`、`story-bible.md` |
+| 卷战略、骨架与节奏窗口 | `story-and-volume-planning.md` 与卷产物 |
+| Chapter Obligation Contract | `chapter-production.md` 的共享章节合同 |
+| Reader Experience Contract | 读者问题、回报、转折、净变化与章末牵引 |
+| Context Broker | 最小 `context-package.md` 与确定性上下文装配 |
+| acceptance / repair / debt | `quality-and-repair.md` 的有限质量循环 |
+| 状态、资源与伏笔回灌 | YAML 连续性权威源和章节 delta |
+| Token 与任务诊断 | 追加式 Token 账本、状态校验和恢复报告 |
+
+明确不迁移 React、Express、Prisma、HTTP 路由、任务队列、Provider 适配层、自研 Agent Runtime、Prompt Workbench UI 和桌面打包代码。
 
 ## 集成前检查
 
