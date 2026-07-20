@@ -5,6 +5,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 
 CHAPTER_PATTERN = re.compile(r"^chapter-(\d+)$")
 INVALID_FILENAME = re.compile(r'[<>:"/\\|?*]')
@@ -23,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, help="自定义输出 TXT 路径")
     parser.add_argument("--dry-run", action="store_true", help="只显示将要导出的章节")
+    parser.add_argument("--stable-only", action="store_true", help="仅导出状态中已提交连续性的稳定正文")
     return parser.parse_args()
 
 
@@ -54,6 +57,28 @@ def choose_draft(chapter_dir: Path, source: str) -> Path | None:
     return None
 
 
+def stable_export_projection(workspace: Path) -> tuple[set[int], set[str]]:
+    state_file = workspace / "novel-state.yaml"
+    if not state_file.is_file():
+        raise ValueError("稳定导出需要 novel-state.yaml")
+    state = yaml.safe_load(state_file.read_text(encoding="utf-8")) or {}
+    artifacts = state.get("artifacts")
+    if not isinstance(artifacts, dict):
+        raise ValueError("稳定导出需要有效的 artifacts 状态")
+    stable_chapters: set[int] = set()
+    ready_paths: set[str] = set()
+    for key, artifact in artifacts.items():
+        if not isinstance(artifact, dict) or artifact.get("status") != "ready":
+            continue
+        path = artifact.get("path")
+        if isinstance(path, str):
+            ready_paths.add(Path(path).as_posix())
+        match = re.fullmatch(r"chapter_(\d+)_delta", str(key))
+        if match:
+            stable_chapters.add(int(match.group(1)))
+    return stable_chapters, ready_paths
+
+
 def chapter_content(chapter_number: int, draft_file: Path) -> tuple[str, str]:
     content = draft_file.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
     heading_match = re.match(r"^#\s+(.+?)\s*\n+", content)
@@ -75,6 +100,10 @@ def collect_chapters(args: argparse.Namespace) -> tuple[list[tuple[int, Path, st
 
     collected: list[tuple[int, Path, str, str]] = []
     skipped: list[str] = []
+    stable_chapters: set[int] | None = None
+    ready_paths: set[str] | None = None
+    if args.stable_only:
+        stable_chapters, ready_paths = stable_export_projection(args.workspace)
     for chapter_dir in sorted(chapters_root.iterdir(), key=lambda item: item.name):
         if not chapter_dir.is_dir():
             continue
@@ -86,9 +115,16 @@ def collect_chapters(args: argparse.Namespace) -> tuple[list[tuple[int, Path, st
             continue
         if args.end is not None and number > args.end:
             continue
+        if stable_chapters is not None and number not in stable_chapters:
+            skipped.append(f"第{number:03d}章：连续性尚未稳定提交")
+            continue
         draft_file = choose_draft(chapter_dir, args.source)
         if draft_file is None:
             skipped.append(f"第{number:03d}章：缺少所选正文来源")
+            continue
+        relative_draft = draft_file.relative_to(args.workspace).as_posix()
+        if ready_paths is not None and relative_draft not in ready_paths:
+            skipped.append(f"第{number:03d}章：正文状态不是 ready")
             continue
         heading, body = chapter_content(number, draft_file)
         if not body:
