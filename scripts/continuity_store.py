@@ -35,6 +35,7 @@ DOMAIN_FILES = {
     "resources": "resources.yaml",
     "characters": "character-state.yaml",
     "relationships": "relationships.yaml",
+    "asset_links": "asset-links.yaml",
 }
 TABLE_SEPARATOR = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+\s*$")
 CHAPTER_PATTERN = re.compile(r"(?:chapter[-_ ]?|第\s*)(\d+)(?:\s*章)?", re.IGNORECASE)
@@ -241,10 +242,18 @@ def make_manifest(last_committed: str) -> dict[str, Any]:
 
 def load_store(workspace: Path) -> dict[str, Any]:
     paths = store_paths(workspace)
-    missing = [str(path.relative_to(workspace)) for key, path in paths.items() if key != "root" and not path.is_file()]
+    missing = [
+        str(path.relative_to(workspace))
+        for key, path in paths.items()
+        if key not in {"root", "asset_links"} and not path.is_file()
+    ]
     if missing:
         raise ValueError(f"structured continuity store is incomplete: {', '.join(missing)}")
-    result = {key: read_yaml(path) for key, path in paths.items() if key != "root"}
+    result = {
+        key: ([] if key == "asset_links" and not path.is_file() else read_yaml(path))
+        for key, path in paths.items()
+        if key != "root"
+    }
     if not isinstance(result["manifest"], dict):
         raise ValueError("manifest.yaml must be a YAML mapping")
     for key in DOMAIN_FILES:
@@ -271,7 +280,7 @@ def validate_store(workspace: Path, store: dict[str, Any] | None = None) -> list
         errors.append("manifest.yaml last_committed_chapter is invalid")
         last_number = 0
     character_ids = {item.get("id") for item in store["characters"] if isinstance(item, dict)}
-    for domain in ("facts", "payoffs", "resources", "characters", "relationships"):
+    for domain in ("facts", "payoffs", "resources", "characters", "relationships", "asset_links"):
         seen: set[str] = set()
         for position, entry in enumerate(store[domain], 1):
             label = f"{domain}[{position}]"
@@ -303,6 +312,16 @@ def validate_store(workspace: Path, store: dict[str, Any] | None = None) -> list
                 for key in ("character_a", "character_b"):
                     if character_ids and entry.get(key) not in character_ids:
                         errors.append(f"{label} references missing character {entry.get(key)}")
+            if domain == "asset_links":
+                for key in ("asset_id", "namespace", "mode", "library_version", "library_hash", "local_path", "local_hash", "status"):
+                    if not str(entry.get(key, "")).strip():
+                        errors.append(f"{label} missing {key}")
+                if entry.get("namespace") not in {"reusable", "universe"}:
+                    errors.append(f"{label} has unsupported namespace")
+                if entry.get("mode") not in {"fork", "sync"}:
+                    errors.append(f"{label} has unsupported mode")
+                if entry.get("status") not in {"active", "update_available", "conflict", "retired"}:
+                    errors.append(f"{label} has unsupported status")
     baseline = store["baseline"]
     if not str(baseline.get("baseline_chapter", "")).strip():
         errors.append("baseline.yaml missing baseline_chapter")
@@ -378,7 +397,7 @@ def create_checkpoint(workspace: Path, chapter: str, reason: str, store: dict[st
 
 def text_for_entry(domain: str, entry: dict[str, Any]) -> str:
     values = [domain, str(entry.get("id", "")), str(entry.get("summary", "")), str(entry.get("status", ""))]
-    for key in ("constraints", "target_window", "latest_progress", "risks_next_window", "holder", "visibility_state", "usage_constraints", "name", "public_relation", "hidden_binding", "direction"):
+    for key in ("constraints", "target_window", "latest_progress", "risks_next_window", "holder", "visibility_state", "usage_constraints", "name", "public_relation", "hidden_binding", "direction", "asset_id", "namespace", "mode", "library_version", "library_hash", "local_path", "local_hash"):
         if entry.get(key):
             values.append(str(entry[key]))
     evidence = entry.get("evidence")
@@ -398,7 +417,7 @@ def build_index(workspace: Path, store: dict[str, Any] | None = None) -> dict[st
     descriptor, temporary_name = tempfile.mkstemp(prefix=".continuity-index-", suffix=".sqlite3", dir=index.parent)
     os.close(descriptor)
     temporary = Path(temporary_name)
-    entries = [(domain, item) for domain in ("facts", "payoffs", "resources", "characters", "relationships") for item in store[domain]]
+    entries = [(domain, item) for domain in ("facts", "payoffs", "resources", "characters", "relationships", "asset_links") for item in store[domain]]
     try:
         connection = sqlite3.connect(temporary)
         try:
@@ -522,6 +541,7 @@ def migrate_workspace(workspace: Path, dry_run: bool = False) -> dict[str, Any]:
         "resources": migrate_resources(workspace / "continuity/resource-ledger.md"),
         "characters": characters,
         "relationships": relationships,
+        "asset_links": [],
     }
     temporary_root = Path(tempfile.mkdtemp(prefix="continuity-store-", dir=workspace / "continuity"))
     try:

@@ -25,6 +25,11 @@ analyses/**
 trends/**
 !trends/.gitkeep
 
+# Private cross-book asset library. Publish or export assets explicitly.
+libraries/**
+!libraries/.gitkeep
+**/continuity/graph/asset-graph-index.sqlite3
+
 # Generated exports
 novels/**/exports/
 
