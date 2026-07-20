@@ -44,6 +44,9 @@ python scripts/asset_graph.py publish libraries <accepted-candidate.yaml> --auth
 python scripts/asset_graph.py import libraries novels/<novel-name> <asset-id> --mode sync
 python scripts/asset_graph.py reconcile libraries novels/<novel-name>
 python scripts/asset_graph.py context libraries novels/<novel-name> --assets <asset-id> --max-depth 2 --max-chars 4000
+python scripts/asset_graph.py validate-selection libraries novels/<novel-name> novels/<novel-name>/context-packages/chapter-001.assets.yaml
+python scripts/novelctl.py context novels/<novel-name> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
+python scripts/asset_graph.py verify-candidate novels/<novel-name> novels/<novel-name>/production/asset-candidates/chapter-001/<asset-id>.yaml
 ```
 
 The graph is derived only from accepted continuity and approved/delegated finalized assets. Its bounded results are candidates; Codex re-reads the YAML/Markdown authority before writing. See the [cross-book asset graph contract](references/cross-book-asset-graph.md).
@@ -133,4 +136,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-The private, Git-ignored cross-book asset graph now lets schema-v3 books import finalized reusable assets and shared-IP canon as an independent `fork` or protected `sync` link. Sync reports updates or conflicts without overwriting prose; canon changes require explicit author approval or a revocable per-asset Codex delegation. Graph results stay bounded candidates, while YAML/Markdown remains authoritative. The Codex-native controller continues to provide recovery, protected author edits, serial chapter progression, Token diagnostics, checkpoints, and stable export. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.
+The private, Git-ignored cross-book asset graph now lets schema-v3 books explicitly select a pinned asset snapshot for each chapter. A selected sync conflict blocks context, drafting, and review without touching prose; an available shared update remains a visible prompt while the book stays pinned. Accepted, committed chapters can stage evidence- and fingerprint-backed publication candidates, still governed by author approval or revocable per-asset Codex delegation. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.

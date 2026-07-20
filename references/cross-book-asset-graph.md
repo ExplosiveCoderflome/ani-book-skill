@@ -53,3 +53,23 @@ python scripts/asset_graph.py context libraries novels/<book> --assets <id-1,id-
 节点和边仅从已验收连续性、已批准资产或明确委托的 Codex 定稿资产派生；边必须记录来源、证据、版本、0–1 置信度和状态。JSONL/YAML 是可核验的派生输入，SQLite 仅为可丢弃索引；索引缺失或过期时可以重建，不得阻塞恢复。
 
 图谱查询只返回有限邻域的**候选**。在安排或写作章节前，Codex 必须回读相应的 YAML/Markdown 权威源，不能把节点或边直接当成事实上下文。`BookGraph` 仍只服务于拆书分析；本图谱只通过作者明确选择的机制卡或资产与其建立来源关系。
+
+## 第二期：章节生产接入
+
+Codex 根据章节计划、已导入资产和图谱候选，显式提出可编辑的选择清单：`context-packages/chapter-XXX.assets.yaml`。每项必须声明资产 ID、用途、约束、导入模式、锁定库版本/哈希和本书快照路径/哈希；图谱邻居只能提示“可考虑导入”，不能越过该清单成为事实。
+
+```powershell
+python scripts/asset_graph.py validate-selection libraries novels/<book> novels/<book>/context-packages/chapter-001.assets.yaml
+python scripts/novelctl.py context novels/<book> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
+```
+
+`novelctl context` 总预算不变，其中跨书资产最多占 35%、且不超过 2500 字符。选中的 `sync` 链接出现 `conflict` 时，`context_package`、正文和审校不能开始；`update_available` 则继续固定使用本书快照，并在上下文中报告待处理更新。未选资产的冲突只在 `novelctl status` 的跨书资产统计中可见，不阻断章节。
+
+章节正文已验收并提交连续性后，Codex 可在 `production/asset-candidates/chapter-XXX/` 创建候选 YAML。候选来源须带 `continuity_committed: true`、章节、工件相对路径、当前 SHA-256 与证据；先验证，再按既有治理发布：
+
+```powershell
+python scripts/asset_graph.py verify-candidate novels/<book> novels/<book>/production/asset-candidates/chapter-001/<asset-id>.yaml
+python scripts/asset_graph.py publish libraries novels/<book>/production/asset-candidates/chapter-001/<asset-id>.yaml --source-workspace novels/<book> --author-approved
+```
+
+候选在通过 `publish` 前不进入资产图、不影响其他小说。共享正史仍需作者批准，除非该资产已有未撤销的 Codex 委托。

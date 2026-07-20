@@ -78,6 +78,8 @@ Read [generation-contracts.md](references/generation-contracts.md) before runnin
 
 Read [cross-book-asset-graph.md](references/cross-book-asset-graph.md) before publishing, importing, syncing, or resolving reusable assets or shared-IP canon. Only schema-v3 workspaces may link cross-book assets; graph results are candidates and the referenced YAML/Markdown remains authoritative.
 
+当章节使用跨书资产时，Codex 先从计划和活跃链接提出 `context-packages/chapter-XXX.assets.yaml`，由脚本校验其固定快照、用途和约束；再通过 `novelctl context --asset-library ... --asset-selection ...` 生成有限上下文。选中资产的同步冲突会阻断上下文、正文和审校；共享更新只提示，默认继续使用本书锁定快照。只有正文验收且连续性提交后，才可在 `production/asset-candidates/` 形成待发布资产候选。
+
 In a schema-v3 workspace, use `scripts/novelctl.py` as the deterministic control surface for state transitions, validation, recovery, context, checkpoints, usage, and export. Codex remains the only creative generation engine; do not add or invoke a model-provider SDK from this skill.
 
 ## Run the Production Loop

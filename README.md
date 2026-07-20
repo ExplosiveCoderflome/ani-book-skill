@@ -107,6 +107,11 @@ python scripts/asset_graph.py publish libraries <accepted-candidate.yaml> --auth
 python scripts/asset_graph.py import libraries novels/<小说名> <资产ID> --mode sync
 python scripts/asset_graph.py reconcile libraries novels/<小说名>
 python scripts/asset_graph.py context libraries novels/<小说名> --assets <资产ID> --max-depth 2 --max-chars 4000
+
+# 为某章锁定已选资产、装配有限上下文，并在定稿后验证候选
+python scripts/asset_graph.py validate-selection libraries novels/<小说名> novels/<小说名>/context-packages/chapter-001.assets.yaml
+python scripts/novelctl.py context novels/<小说名> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
+python scripts/asset_graph.py verify-candidate novels/<小说名> novels/<小说名>/production/asset-candidates/chapter-001/<资产ID>.yaml
 ```
 
 图谱只从验收连续性和已批准/委托的定稿资产派生，并且只返回有限候选；写作前 Codex 会回读 YAML/Markdown 权威源。完整规则见 [跨书资产图谱合同](references/cross-book-asset-graph.md)。
@@ -186,6 +191,7 @@ python scripts/token_usage.py summarize novels/<小说名> --write
 - 本机私有的 `libraries/` 可保存已定稿的可复用机制和共享 IP 正史；每本 schema v3 小说按资产选择独立 `fork` 或受保护的 `sync`。
 - 同步只报告更新或冲突，不覆盖正文；作者可显式保留本书、采用共享版本，或在批准/委托后提交正史更新。
 - 图谱只从验收连续性及已批准/委托的资产派生，查询只返回有限候选，写作前仍回读 YAML/Markdown 权威源。
+- 跨书资产现在可被章节显式选择并锁定版本；选中资产冲突会阻断上下文、正文和审校，定稿后的提炼资产仍须验证证据并走既有治理发布。
 - `novelctl.py` 统一负责工作区初始化、唯一下一步、校验、恢复、步骤转换、上下文、检查点、用量和稳定正文导出。
 - `novel-state.yaml` 升级为 schema v3；旧 v1/v2 工作区只读兼容，必须显式迁移并先备份。
 - 用户修改过的正文和规划会被保护，其未写下游只标记为 `stale`，不会被自动覆盖。
