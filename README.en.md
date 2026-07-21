@@ -5,7 +5,7 @@
 
 > Use Codex to turn an idea, chapters, continuity, and cross-book canon into a novel-production system that can keep going.
 
-Current version: `0.3.0` (2026-07-21)
+Current version: `0.3.1` (2026-07-22)
 
 **Ani Book Skill** is a Codex-native production system for long-form Chinese fiction. It turns a rough idea into a story engine, volume and chapter plans, stable prose, durable continuity, reusable assets, and shared-IP canon.
 
@@ -164,4 +164,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-Version `0.3.0` now starts an explicit no-idea path with five distinct opening seeds, then two materially different new-book brief previews after the user chooses or supplies an idea. Only a selected, combined, or delegated direction can enter authoritative brief confirmation. It also adds the Skill currency check: compare the authoritative source with the installed mirror before first use and after Skill-surface changes. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.
+Version `0.3.1` strengthens the no-idea opening flow with private divergence and commercial-quality gates for reader fantasy, three-chapter payoff, progression, and follow-through promise. The checked-out repository is now the editable Skill source, and validated changes automatically synchronize to the locally resolved installed mirror without a machine-specific path. See the [changelog](docs/releases/release-notes.md) for the full release notes.

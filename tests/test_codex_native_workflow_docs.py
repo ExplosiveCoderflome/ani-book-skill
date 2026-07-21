@@ -61,26 +61,41 @@ class CodexNativeWorkflowDocsTests(unittest.TestCase):
         self.assertIn("first Skill run", agents)
         self.assertIn("sync_skill_mirror.py check", agents)
         self.assertIn("sync_skill_mirror.py sync", agents)
-        self.assertIn("Do not hardcode a machine-specific", agents)
+        self.assertIn("After every functional edit", agents)
+        self.assertIn("This standing authorization applies without asking again", agents)
+        self.assertIn("$env:CODEX_HOME", agents)
         self.assertNotIn("G:\\documents\\ani-book-skill", agents)
         self.assertIn("Before the first production action", skill)
         self.assertIn("sync_skill_mirror.py check", skill)
-        self.assertIn("Do not silently continue with a stale installed copy", skill)
-        self.assertIn("Do not assume or hardcode a machine-specific", skill)
+        self.assertIn("After every functional edit", skill)
+        self.assertIn("automatically synchronize", skill)
+        self.assertIn("Never synchronize failed or unvalidated", skill)
 
     def test_opening_inspiration_and_two_brief_previews_are_documented(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         brief = (ROOT / "references" / "novel-brief.md").read_text(encoding="utf-8")
+        seeds = (ROOT / "references" / "opening-seeds.md").read_text(encoding="utf-8")
         routing = (ROOT / "references" / "workflow-routing.md").read_text(encoding="utf-8")
         self.assertIn("exactly five", skill)
         self.assertIn("exactly two", skill)
+        self.assertIn("references/opening-seeds.md", skill)
         for document in (brief, routing):
             self.assertIn("五条", document)
             self.assertIn("两份", document)
-        self.assertIn("strong hook, character growth, setting wonder, relationship pull, and mystery investigation", skill)
+        for requirement in (
+            "顶尖连载网文作者兼商业责编",
+            "先发散，后输出",
+            "读者代入什么幻想",
+            "前三章完成第一次有效反击或回报",
+            "长篇升级地图",
+            "十秒可售",
+            "三章兑现",
+            "追读承诺",
+        ):
+            self.assertIn(requirement, seeds)
+        self.assertIn("功能机械等同于题材分类", brief)
         self.assertIn("不得写入 `novel-brief.md`", brief)
         self.assertNotIn("第一响应固定只问三项", brief)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,18 +15,18 @@ Help a novice author move from a vague idea toward a complete long-form novel. P
 
 ## Check Skill Currency Before Running
 
-Treat the repository skill surface and the installed Skill mirror as separate copies. Before the first production action in a task, and again after changing `SKILL.md`, `references/`, `scripts/`, `assets/`, `requirements.txt`, or `agents/`, compare an explicitly supplied source directory with the installed mirror:
+Treat the checked-out repository as the editable Skill source and the locally installed Skill as its runtime mirror. Resolve the installed mirror from `$env:CODEX_HOME\skills\produce-long-form-novel`; when `CODEX_HOME` is unset, use `<UserProfile>\.codex\skills\produce-long-form-novel`. Before the first production action in a task, compare the repository root with that mirror:
 
 ```powershell
-python scripts/sync_skill_mirror.py check <source-skill-directory> <installed-skill-directory>
+python scripts/sync_skill_mirror.py check <repository-root> <installed-skill-directory>
 ```
 
 - Report `missing`, `changed`, and `extra` files before relying on the mirror.
-- Do not silently continue with a stale installed copy. After the source has passed the required validation, synchronize with `sync_skill_mirror.py sync`; the sync is additive and must not delete mirror-only files.
-- Do not assume or hardcode a machine-specific authoritative source path. If the supplied source directory is missing, report it and request an explicit fallback; use the current checked-out repository only when the user explicitly asks to install or synchronize it.
+- After every functional edit to `SKILL.md`, `references/`, `scripts/`, `assets/`, `requirements.txt`, or `agents/`, run the repository's required compile, tests, and Skill quick validator. When they pass, automatically synchronize the repository to the resolved installed mirror and rerun `check`; do not ask for repeated authorization.
+- Never synchronize failed or unvalidated functional changes. Keep synchronization additive and preserve mirror-only files. Do not hardcode a user-specific absolute path.
 - This comparison and synchronization are deterministic maintenance operations; do not record them as creative model usage.
 
-When a user explicitly says they have no story idea, do **not** begin with the three opening settings or a full premise. Generate exactly five non-authoritative, one-sentence opening seeds: strong hook, character growth, setting wonder, relationship pull, and mystery investigation. Each seed needs a concrete protagonist identity, opening predicament, fate-changing variable, and a first-chapter event that can continue. Keep the five directions materially different; do not merely reskin the same system, rebirth, humiliation, or family-conflict opening. Ask the user to choose one, edit one, or provide an original idea.
+When a user explicitly says they have no story idea, do **not** begin with the three opening settings or a full premise. Read [opening-seeds.md](references/opening-seeds.md), run its private divergence and quality-gate process, then output exactly five non-authoritative, one-sentence opening seeds. Ask the user to choose one, edit one, or provide an original idea.
 
 When the user supplies an initial idea or selects one opening seed, generate exactly two non-authoritative new-book brief previews before formal planning. Each preview must include a working title, one-sentence premise, target reader/reward, protagonist path, core conflict, early hook, progression loop, and high-level ending direction. The two previews must differ materially in their selling point, conflict, protagonist path, progression loop, tone, or ending direction. Do not write either preview to `novel-brief.md`, mark it `ready`, or use it for world, volume, or chapter production until the user selects, combines, or delegates a direction.
 
