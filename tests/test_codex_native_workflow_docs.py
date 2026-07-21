@@ -65,6 +65,19 @@ class CodexNativeWorkflowDocsTests(unittest.TestCase):
         self.assertIn("sync_skill_mirror.py check", skill)
         self.assertIn("Do not silently continue with a stale installed copy", skill)
 
+    def test_opening_inspiration_and_two_brief_previews_are_documented(self) -> None:
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        brief = (ROOT / "references" / "novel-brief.md").read_text(encoding="utf-8")
+        routing = (ROOT / "references" / "workflow-routing.md").read_text(encoding="utf-8")
+        self.assertIn("exactly five", skill)
+        self.assertIn("exactly two", skill)
+        for document in (brief, routing):
+            self.assertIn("五条", document)
+            self.assertIn("两份", document)
+        self.assertIn("strong hook, character growth, setting wonder, relationship pull, and mystery investigation", skill)
+        self.assertIn("不得写入 `novel-brief.md`", brief)
+        self.assertNotIn("第一响应固定只问三项", brief)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -100,6 +100,8 @@ One library is one shared-IP universe by default. Published `universe/event` ass
 Use $produce-long-form-novel to plan a long novel from my idea.
 ```
 
+If you explicitly have no idea, Codex first offers five one-sentence opening seeds with distinct angles: strong hook, character growth, setting wonder, relationship pull, and mystery investigation. After you choose or edit one—or provide your own idea—it creates two materially different new-book brief previews. Only after you choose, combine, or delegate a direction does it confirm the opening settings and write the authoritative `novel-brief.md`.
+
 For an existing workspace:
 
 ```text
@@ -162,4 +164,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-Version `0.3.0` adds an explicit Skill currency check: before first use and after a Skill-surface change, compare the authoritative source with the installed mirror, report differences, then synchronize only after validation. The cross-book asset graph, chapter selection, canon timeline, and read-only impact review remain protected by their existing no-overwrite boundaries. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.
+Version `0.3.0` now starts an explicit no-idea path with five distinct opening seeds, then two materially different new-book brief previews after the user chooses or supplies an idea. Only a selected, combined, or delegated direction can enter authoritative brief confirmation. It also adds the Skill currency check: compare the authoritative source with the installed mirror before first use and after Skill-surface changes. See the [changelog](docs/releases/release-notes.md) for the full latest release notes.
