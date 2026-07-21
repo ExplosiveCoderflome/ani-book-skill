@@ -19,7 +19,7 @@
 - Use Python 3.10 or newer and UTF-8 explicitly.
 - Add or update tests for every deterministic workflow change.
 - Run `python -m compileall -q scripts`, `python -m unittest discover -s tests -v`, and the Skill quick validator (`python -X utf8 <skill-creator>/scripts/quick_validate.py .` on Windows) before completion.
-- Keep `G:\documents\ani-book-skill\ani-book-skill` authoritative. The sibling `produce-long-form-novel` directory is an installation mirror and must only be synchronized after verification.
+- Do not hardcode a machine-specific “authoritative source” path. A Skill source and installed mirror must be supplied explicitly for each sync, or the current checked-out repository may be used only when the user explicitly asks to install or synchronize it.
 - On the first Skill run in a task, and whenever the Skill surface changes, check source/mirror currency before creative or stateful production with `python scripts/sync_skill_mirror.py check <source-skill-directory> <installed-skill-directory>`.
 - Treat `missing` or `changed` results as an explicit maintenance finding; do not silently run against a stale installed mirror. After compile, tests, and the Skill quick validator pass, synchronize with `python scripts/sync_skill_mirror.py sync <source-skill-directory> <installed-skill-directory>` and rerun `check`.
-- If the configured authoritative source path is unavailable, report that blocker and identify the explicit fallback source before syncing; never silently replace the authority.
+- If an explicitly supplied source path is unavailable, report that blocker and request or identify an explicit fallback source before syncing; never silently substitute a different directory.

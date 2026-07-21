@@ -15,7 +15,7 @@ Help a novice author move from a vague idea toward a complete long-form novel. P
 
 ## Check Skill Currency Before Running
 
-Treat the repository skill surface and the installed Skill mirror as separate copies. Before the first production action in a task, and again after changing `SKILL.md`, `references/`, `scripts/`, `assets/`, `requirements.txt`, or `agents/`, compare the configured source directory with the installed mirror:
+Treat the repository skill surface and the installed Skill mirror as separate copies. Before the first production action in a task, and again after changing `SKILL.md`, `references/`, `scripts/`, `assets/`, `requirements.txt`, or `agents/`, compare an explicitly supplied source directory with the installed mirror:
 
 ```powershell
 python scripts/sync_skill_mirror.py check <source-skill-directory> <installed-skill-directory>
@@ -23,7 +23,7 @@ python scripts/sync_skill_mirror.py check <source-skill-directory> <installed-sk
 
 - Report `missing`, `changed`, and `extra` files before relying on the mirror.
 - Do not silently continue with a stale installed copy. After the source has passed the required validation, synchronize with `sync_skill_mirror.py sync`; the sync is additive and must not delete mirror-only files.
-- If the configured authoritative source directory is missing, report the missing authority and do not invent a replacement source without an explicit project instruction.
+- Do not assume or hardcode a machine-specific authoritative source path. If the supplied source directory is missing, report it and request an explicit fallback; use the current checked-out repository only when the user explicitly asks to install or synchronize it.
 - This comparison and synchronization are deterministic maintenance operations; do not record them as creative model usage.
 
 When a user explicitly says they have no story idea, do **not** begin with the three opening settings or a full premise. Generate exactly five non-authoritative, one-sentence opening seeds: strong hook, character growth, setting wonder, relationship pull, and mystery investigation. Each seed needs a concrete protagonist identity, opening predicament, fate-changing variable, and a first-chapter event that can continue. Keep the five directions materially different; do not merely reskin the same system, rebirth, humiliation, or family-conflict opening. Ask the user to choose one, edit one, or provide an original idea.

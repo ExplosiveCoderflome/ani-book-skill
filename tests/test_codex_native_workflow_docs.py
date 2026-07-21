@@ -61,9 +61,12 @@ class CodexNativeWorkflowDocsTests(unittest.TestCase):
         self.assertIn("first Skill run", agents)
         self.assertIn("sync_skill_mirror.py check", agents)
         self.assertIn("sync_skill_mirror.py sync", agents)
+        self.assertIn("Do not hardcode a machine-specific", agents)
+        self.assertNotIn("G:\\documents\\ani-book-skill", agents)
         self.assertIn("Before the first production action", skill)
         self.assertIn("sync_skill_mirror.py check", skill)
         self.assertIn("Do not silently continue with a stale installed copy", skill)
+        self.assertIn("Do not assume or hardcode a machine-specific", skill)
 
     def test_opening_inspiration_and_two_brief_previews_are_documented(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
