@@ -3,6 +3,7 @@
 ## Product Boundary
 
 - Keep this repository a Codex-native Skill project. Codex is the only creative generation and judgment engine; do not add model-provider SDKs, a web API, a database authority, or a custom agent runtime.
+- Exception: `apps/workspace-reader` is an optional, isolated React/Fumadocs reader authorized to read explicitly configured local novel and analysis workspaces. Its loopback Node service may provide read-only pages, assets and local search; it must never invoke a model provider, call `novelctl`, write authoritative artifacts or become a required Skill runtime dependency.
 - This repository is driven by Codex itself, not by `AI-Novel-Writing-Assistant`; that project may be read only for ideas and is never a runtime, submodule, or production dependency.
 - Treat Skills as process contracts. Keep Python limited to deterministic state, validation, indexes, conflict detection, and export; provider/model metadata is diagnostics only when the Codex host exposes it.
 - Treat `SKILL.md`, `references/`, deterministic scripts, and local Markdown/YAML workspaces as the product surface.

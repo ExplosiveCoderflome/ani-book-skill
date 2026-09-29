@@ -118,6 +118,14 @@ Use $produce-long-form-novel to analyze recent xianxia chart composition and cre
 Use $produce-long-form-novel to deconstruct this authorized novel text; establish coverage, segment notes, and an overview first.
 ```
 
+## Read novel and analysis workspaces
+
+The optional **ANI Local Reader** uses React and Fumadocs to browse Markdown in `novels/` and `analyses/`, with a bookshelf, grouped navigation, full file tree, Chinese full-text search, headings, font and theme controls, and chapter navigation. It refreshes when local files change.
+
+With Node.js 22.18+ installed, run `./apps/workspace-reader/start-local.ps1` from the repository root and open <http://127.0.0.1:8790>. Use `-Roots 'C:/writing', 'D:/research'` for existing workspaces elsewhere. It only reads explicitly configured local workspaces and does not call a model or modify manuscripts or state. See the [reader guide](apps/workspace-reader/README.md).
+
+The analysis dashboard shows declared coverage, reading gaps, analysis sections, mechanisms and evidence health. Choose mechanisms and a target novel/chapter to prepare a Codex request. Codex proposes an original adaptation, validates pinned references and includes bounded craft guidance in chapter context and review. See [analysis-to-novel integration](references/analysis-to-novel.md).
+
 ## Install and use local tools
 
 Install this repository as a personal Codex Skill, then invoke `$produce-long-form-novel`. See [SKILL.md](SKILL.md) for the complete workflow contract.
@@ -164,4 +172,4 @@ Repository files are released under the [Apache License 2.0](LICENSE). See the [
 
 ## Latest update
 
-Version `0.3.1` strengthens the no-idea opening flow with private divergence and commercial-quality gates for reader fantasy, three-chapter payoff, progression, and follow-through promise. The checked-out repository is now the editable Skill source, and validated changes automatically synchronize to the locally resolved installed mirror without a machine-specific path. See the [changelog](docs/releases/release-notes.md) for the full release notes.
+2026-09-30: Added the optional local reader, an analysis dashboard and explicit mechanism-to-chapter integration with original adaptations, pinned evidence, bounded context and review checks. Manuscripts and state remain authoritative local files. See the [changelog](docs/releases/release-notes.md) for the full history.

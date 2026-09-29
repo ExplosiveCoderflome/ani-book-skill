@@ -20,6 +20,7 @@ from typing import Any, Iterable
 import yaml
 
 import asset_graph
+import analysis_reference
 import continuity_store
 import token_usage
 
@@ -665,6 +666,14 @@ def validate_chapter_asset_preflight(workspace: Path, target: str) -> None:
         asset_graph.validate_asset_selection(workspace, selection)
 
 
+def validate_chapter_reference_preflight(workspace: Path, target: str) -> None:
+    number = chapter_number(target)
+    if number is not None:
+        selection = analysis_reference.selection_path(workspace, number)
+        if selection.exists() or selection.is_symlink():
+            analysis_reference.render_context(workspace, number)
+
+
 def command_start_step(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
@@ -673,6 +682,8 @@ def command_start_step(args: argparse.Namespace) -> int:
         raise ValueError("step has invalid format")
     if args.step in {"context_package", "chapter_draft", "chapter_review"}:
         validate_chapter_asset_preflight(workspace, args.target)
+    if args.step in CHAPTER_STEPS - {"continuity_update"}:
+        validate_chapter_reference_preflight(workspace, args.target)
     if args.step == "novel_brief" and not opening_choices_ready(state):
         raise ValueError("confirm channel, publication format, and primary reader reward before novel_brief")
     key = artifact_key(args.step, args.target)
@@ -776,6 +787,8 @@ def command_finish_step(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
     require_v3(state)
+    if args.status == "ready" and args.step in CHAPTER_STEPS - {"continuity_update"}:
+        validate_chapter_reference_preflight(workspace, args.target)
     key = artifact_key(args.step, args.target)
     artifact = state["artifacts"].get(key)
     if not isinstance(artifact, dict) or artifact.get("status") != "in_progress":
@@ -883,6 +896,8 @@ def run_script(name: str, arguments: list[str]) -> int:
 
 def command_context(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
+    reference_selection = analysis_reference.selection_path(workspace, args.chapter)
+    reference_context = analysis_reference.render_context(workspace, args.chapter) if reference_selection.exists() or reference_selection.is_symlink() else ""
     if bool(args.asset_library) != bool(args.asset_selection):
         raise ValueError("--asset-library and --asset-selection must be used together")
     asset_context = ""
@@ -898,10 +913,14 @@ def command_context(args: argparse.Namespace) -> int:
         rendered = continuity_store.assemble_context(workspace, args.chapter, characters, args.max_chars - asset_budget)
         if asset_context:
             rendered = rendered.rstrip() + "\n\n" + asset_context
+        if reference_context:
+            rendered = rendered.rstrip() + "\n\n" + reference_context
         if args.output:
             relative_output = safe_relative_path(args.output)
             atomic_write_text(workspace / relative_output, rendered)
             sources = ["continuity/data/*.yaml"] + ([safe_relative_path(args.asset_selection)] if args.asset_selection else [])
+            if reference_context:
+                sources.append(reference_selection.relative_to(workspace).as_posix())
             print(json.dumps({"written": relative_output, "sources": sources, "asset_budget": asset_budget}, ensure_ascii=False, indent=2))
         else:
             print(rendered, end="")
@@ -942,10 +961,12 @@ def command_context(args: argparse.Namespace) -> int:
         output += [f"\n### `{relative}`", content]
     output += ["", "## 裁剪说明", f"- 最大字符预算：{args.max_chars}", "- 未列出的文件因无关、重复、缺失或预算限制而省略。"]
     rendered = "\n".join(output).strip() + "\n"
+    if reference_context:
+        rendered += "\n" + reference_context
     if args.output:
         relative_output = safe_relative_path(args.output)
         atomic_write_text(workspace / relative_output, rendered)
-        print(json.dumps({"written": relative_output, "sources": [item[0] for item in selected]}, ensure_ascii=False, indent=2))
+        print(json.dumps({"written": relative_output, "sources": [item[0] for item in selected] + ([reference_selection.relative_to(workspace).as_posix()] if reference_context else [])}, ensure_ascii=False, indent=2))
     else:
         print(rendered, end="")
     return 0

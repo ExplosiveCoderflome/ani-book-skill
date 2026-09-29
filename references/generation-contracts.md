@@ -50,6 +50,8 @@ Codex 是唯一生成与创作判断引擎。每个生成步骤必须消费权�
 
 ## 状态与失败
 
+使用已有拆书资源时，按 [analysis-to-novel.md](analysis-to-novel.md) 为当前章准备 `context-packages/chapter-XXX.references.yaml`。Codex 从本章目标选择机制，提出用途、原创改造、禁止元素和效果检查；`novelctl context` 校验来源及证据后加入独立预算的创作方法部分。来源失效或参考超限时先核对清单，不能用旧检索缓存继续生成，也不能把参考书内容当成本书事实。审校回看机制是否实际生效及是否过度相似。
+
 - `continue_with_warning` 产生稳定连续性，同时新增质量债。
 - `local_patch_plan` 只允许一次局部修复。
 - 局部修复不可行时最多升级一次 `rewrite_needed`。

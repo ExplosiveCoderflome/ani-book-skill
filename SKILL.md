@@ -133,6 +133,7 @@ Read [book-analysis-retrieval.md](references/book-analysis-retrieval.md) before 
 - Treat `retrieval/analysis-index.sqlite3` and embeddings as disposable derived caches. Keep Markdown/YAML, graph JSONL, source fingerprints, and user edits authoritative.
 - Separate source fact, supported inference, and open hypothesis. Bind important conclusions to chapter or segment evidence and preserve contrary evidence.
 - Produce reusable mechanism cards rather than imitation instructions. Describe prerequisites, reader effect, failure modes, and a safe transformation direction; never reproduce substantial source text or promise stylistic cloning.
+- When using analysis resources in a new or continuing novel, read [analysis-to-novel.md](references/analysis-to-novel.md). Select mechanisms against the current book/chapter need, propose an original adaptation, and validate the pinned evidence before adding craft references to chapter context. Reference conclusions never become this novel's continuity facts.
 - Keep successful analysis sections when another section fails. Resume only missing or stale work, and mark downstream analysis stale when the source fingerprint or scope changes.
 - When the source is the user's own manuscript, use diagnosis mode and recommend bounded repairs without modifying the manuscript unless explicitly authorized.
 

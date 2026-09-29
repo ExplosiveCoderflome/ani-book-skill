@@ -36,3 +36,10 @@ novels/**/exports/
 # Rebuildable continuity caches
 **/continuity/index.sqlite3
 **/continuity/index.sqlite3-*
+
+# Optional local workspace reader: dependencies and generated/private outputs.
+apps/workspace-reader/node_modules/
+apps/workspace-reader/build/
+apps/workspace-reader/.react-router/
+apps/workspace-reader/*.log
+apps/workspace-reader/reader.local.json
