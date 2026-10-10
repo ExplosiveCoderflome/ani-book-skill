@@ -1,175 +1,120 @@
+<div align="center">
+
 # Ani Book Skill
 
+**Keep ideas, research, and long-form fiction moving in Codex.**
+
+From finding a direction and planning a book to finishing chapters, preserving continuity, writing fanfic, and reusing canon across books.<br>
+Your creative work remains in editable local files, with evidence and a clear next step.
+
 [![Validate](https://github.com/ExplosiveCoderflome/ani-book-skill/actions/workflows/validate.yml/badge.svg)](https://github.com/ExplosiveCoderflome/ani-book-skill/actions/workflows/validate.yml)
-[中文](README.md) · [Changelog](docs/releases/release-notes.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> Use Codex to turn an idea, chapters, continuity, and cross-book canon into a novel-production system that can keep going.
+[Get started](#get-started) · [Capabilities](#what-you-can-do) · [Local reader](#local-reader) · [Changelog](docs/releases/release-notes.md) · [中文](README.md)
 
-Current version: `0.3.1` (2026-07-22)
+</div>
 
-**Ani Book Skill** is a Codex-native production system for long-form Chinese fiction. It turns a rough idea into a story engine, volume and chapter plans, stable prose, durable continuity, reusable assets, and shared-IP canon.
+![A creative loop from idea and story structure to chapter review and durable continuity](assets/workflow-hero.png)
 
-It is built for the three long-form problems that one-off prompting does not solve: why a chapter matters, how facts stay stable across dozens of chapters, and how multiple books safely reuse and govern a shared universe.
+> **In short:** Codex handles understanding, planning, writing, and judgment. The Skill defines the workflow. Local tools handle state, validation, retrieval, and export. The author can always inspect and edit the Markdown / YAML source.
 
-## Codex-native, not another agent runtime
+## What you can do
 
-**Codex itself is the only engine for creative understanding, planning, generation, review, and judgment.** The Skill is the process contract; Python performs only deterministic state, validation, indexing, conflict detection, and export. This is not an `AI-Novel-Writing-Assistant` runtime or submodule: it does not add a model-provider SDK, Web API, database authority, queue, or custom agent runtime. Provider/model fields are Token diagnostics only when exposed by the Codex host.
+| Starting point | Result |
+| --- | --- |
+| **No story yet** | If you explicitly have no idea, review five opening seeds with different creative angles. For a vague direction, first choose the audience channel, publishing format, and main reader reward; then compare two distinct book-brief previews. |
+| **Looking for a promising genre** | Turn public chart metadata, such as titles, tags, and descriptions, into snapshots, trend reports, and opportunity cards. |
+| **Analyzing a reference book** | Estimate the length and segmentation of an authorized text, choose full or partial coverage, then build evidence-based segment notes, character cards, and searchable craft mechanisms using a book-specific analysis lens. |
+| **Writing fanfic** | Work from authorized facts within the read scope. Continue from the last fully documented chapter ending or write a new story using the established canon. Complete `fanfic-handoff.md` before entering a separate novel workspace. |
+| **Serializing a long novel** | Move from the story engine and volume plan to complete chapter prose, humanization, review, continuity updates, and a recoverable next action. |
+| **Writing a series or shared universe** | Reuse accepted assets through `fork` / `sync`, check canon timelines and impact, and keep publication and conflict decisions with the author. |
 
-```text
-Codex: story understanding, relationships, planning, writing, review, impact judgment
-  -> Skill/contracts: required inputs, outputs, and acceptance rules
-  -> Python: deterministic validation, evidence, conflict protection, rebuildable indexes
-  -> Markdown/YAML authority; JSONL/SQLite disposable derivatives
-```
+### Turn research into writing decisions
 
-![Ani Book Skill workflow: idea and research, story architecture, drafting and review, continuity storage, and the next chapter loop](assets/workflow-hero.png)
+A reference analysis is more than a long report. The size estimate helps you choose a practical reading scope. `analysis-lens.md` fixes the questions for each book. Segment notes and character cards retain evidence, while retrieval helps find it again. Source text is used only for authorized analysis; search results do not replace verifiable notes.
 
-*From the first spark to shared canon: every accepted change remains traceable instead of making context more chaotic.*
+The local reader's analysis dashboard shows planned and actual coverage, gaps, focused analyses, mechanisms, and evidence health. It can prepare a request for a target novel and chapter. Codex then proposes an **original adaptation**, validates pinned references, adds bounded craft guidance to chapter context, and checks the outcome during review. See the [analysis guide](references/book-analysis.md), [retrieval guide](references/book-analysis-retrieval.md), and [analysis-to-novel workflow](references/analysis-to-novel.md).
 
-## What is production-ready now
+### Stabilize one chapter at a time
 
-| Layer | What you get | What stays protected |
-| --- | --- | --- |
-| **Idea to chapter** | Reader promise, story engine, plans, prose, revision, and review | Progressive confirmation, chapter obligations, and quality debt |
-| **Long-form continuity** | Recoverable facts, promises, resources, character state, and relationships | Only accepted material enters durable memory; user edits are never overwritten |
-| **Cross-book knowledge graph** | Reusable mechanisms, shared entities, canon events, and impact reports | Every node has evidence and a fingerprint; graph results remain candidates |
-| **Shared-IP governance** | `fork` / `sync`, canon candidates, explicit publishing, revocable delegation | Conflicts do not overwrite prose; impact review never bulk-updates books |
+`Direction → story engine → volume/chapter plan → complete chapter → revision and review → continuity → next chapter`
 
-Start from an idea when you are new to a novel, or resume from an existing workspace and asset library when maintaining a series. The system always exposes one recoverable next step rather than asking you to assemble prompts and context manually.
+Each chapter loads only the context it needs. Facts, promises, resources, character state, and relationships enter durable memory after acceptance; unreviewed candidates never become story facts. YAML and accepted Markdown are authoritative. SQLite indexes and reader views are rebuildable. User edits to prose and artifacts are protected, and older workspaces can be checked, backed up, and explicitly migrated.
 
-## The production chain — stabilize prose, continuity, and assets together
+## Get started
 
-This is not a linear “generate another passage” chat. It is a production loop that calibrates, accumulates, and recovers after every accepted chapter:
-
-| Stage | What moves forward | What stays protected |
-| --- | --- | --- |
-| **01 · Find direction** | Reader promise, chart opportunities, or the real problem in an existing story | A vague idea is not prematurely frozen into an outline |
-| **02 · Build the engine** | Protagonist drive, rules, relationships, and volume-level promises | Every volume has a clear reason to keep reading |
-| **03 · Finish one chapter** | Chapter contract, bounded context, complete prose, humanization, review | Goals, character limits, turns, and the ending pull remain coherent |
-| **04 · Create the next foundation** | Facts, promises, resources, relationship changes, recovery checkpoints | Only accepted material becomes durable memory |
-
-```text
-Direction → story engine → chapter plan → complete prose → review and commit
-    ↑                                                       ↓
-    └──────────────── continuity state and next chapter ───┘
-```
-
-**The key rule: stabilize one chapter at a time.** No stitched parallel fragments, no unreviewed candidates becoming facts, and no need to load the entire novel into the next context. Only accepted material can become a cross-book asset or a shared-universe event candidate.
-
-## Cross-book knowledge graph and shared universe
-
-The private, Git-ignored `libraries/` folder can hold finalized reusable assets (`reusable`) and shared-IP canon (`universe`). A schema-v3 book imports each asset as either a standalone `fork` or protected `sync` link. Synchronization only reports an update or conflict—it never overwrites prose. The author explicitly keeps the local version, adopts shared canon, or approves/delegates a canon update.
-
-```powershell
-python scripts/asset_graph.py init libraries
-python scripts/asset_graph.py publish libraries <accepted-candidate.yaml> --author-approved
-python scripts/asset_graph.py import libraries novels/<novel-name> <asset-id> --mode sync
-python scripts/asset_graph.py reconcile libraries novels/<novel-name>
-python scripts/asset_graph.py context libraries novels/<novel-name> --assets <asset-id> --max-depth 2 --max-chars 4000
-python scripts/asset_graph.py validate-selection libraries novels/<novel-name> novels/<novel-name>/context-packages/chapter-001.assets.yaml
-python scripts/novelctl.py context novels/<novel-name> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
-python scripts/asset_graph.py verify-candidate novels/<novel-name> novels/<novel-name>/production/asset-candidates/chapter-001/<asset-id>.yaml
-python scripts/asset_graph.py delegate-universe libraries --enabled
-python scripts/asset_graph.py canon-check libraries
-python scripts/asset_graph.py timeline libraries
-python scripts/asset_graph.py impact libraries <canon-candidate.yaml> --workspace novels/<novel-name>
-```
-
-One library is one shared-IP universe by default. Published `universe/event` assets derive a canon timeline from stable sequence numbers, participants, effects, and optional precedence. `canon-check` validates endpoints, evidence, order, and cycles; `impact` only reports the explicit workspaces' affected sync links, chapter selections, and timeline neighborhood, never rewriting any artifact. Publishing still needs author approval, per-asset delegation, or active universe-level Codex delegation. The graph is derived only from accepted continuity and approved/delegated finalized assets; its bounded results are candidates, and Codex re-reads the YAML/Markdown authority before writing. See the [cross-book asset graph contract](references/cross-book-asset-graph.md).
-
-## What it helps you do
-
-| Challenge | Workflow | Durable output |
-| --- | --- | --- |
-| Find a viable direction | Analyze public chart metadata without reading novel prose | Snapshots, reports, opportunity cards |
-| Turn an idea into a serial engine | Confirm only the few creative choices that matter, then plan volumes and chapter obligations | Brief, bible, cast, volume plan, beats |
-| Keep chapters from drifting | Plan → bounded context → complete draft → humanization → review → continuity commit | Prose, review, delta, next action |
-| Keep long-running memory affordable | Treat YAML as authority and SQLite as a rebuildable index | Checkpoints, readable views, bounded context |
-| Understand model usage per step | Record every generation call without mixing exact, estimated, and unavailable measurements | Append-only usage ledger and step/model summaries |
-
-## Why this is more than a prompt collection
-
-- Start with reader promise before expanding the setting.
-- Commit one accepted chapter at a time; unreviewed candidates never become story facts.
-- Preserve facts, resources, promises, character state, and relationships with stable IDs and chapter evidence.
-- Keep manuscripts and research local, inspectable, editable, and portable.
-
-## Start with one prompt
-
-```text
-Use $produce-long-form-novel to plan a long novel from my idea.
-```
-
-If you explicitly have no idea, Codex first offers five one-sentence opening seeds with distinct angles: strong hook, character growth, setting wonder, relationship pull, and mystery investigation. After you choose or edit one—or provide your own idea—it creates two materially different new-book brief previews. Only after you choose, combine, or delegate a direction does it confirm the opening settings and write the authoritative `novel-brief.md`.
-
-For an existing workspace:
-
-```text
-Use $produce-long-form-novel to continue novels/<novel-name>/ and determine the next safe production step.
-```
-
-For market research or authorized analysis:
-
-```text
-Use $produce-long-form-novel to analyze recent xianxia chart composition and create opportunity cards.
-```
-
-```text
-Use $produce-long-form-novel to deconstruct this authorized novel text; establish coverage, segment notes, and an overview first.
-```
-
-## Read novel and analysis workspaces
-
-The optional **ANI Local Reader** uses React and Fumadocs to browse Markdown in `novels/` and `analyses/`, with a bookshelf, grouped navigation, full file tree, Chinese full-text search, headings, font and theme controls, and chapter navigation. It refreshes when local files change.
-
-With Node.js 22.18+ installed, run `./apps/workspace-reader/start-local.ps1` from the repository root and open <http://127.0.0.1:8790>. Use `-Roots 'C:/writing', 'D:/research'` for existing workspaces elsewhere. It only reads explicitly configured local workspaces and does not call a model or modify manuscripts or state. See the [reader guide](apps/workspace-reader/README.md).
-
-The analysis dashboard shows declared coverage, reading gaps, analysis sections, mechanisms and evidence health. Choose mechanisms and a target novel/chapter to prepare a Codex request. Codex proposes an original adaptation, validates pinned references and includes bounded craft guidance in chapter context and review. See [analysis-to-novel integration](references/analysis-to-novel.md).
-
-## Install and use local tools
-
-Install this repository as a personal Codex Skill, then invoke `$produce-long-form-novel`. See [SKILL.md](SKILL.md) for the complete workflow contract.
-
-Python 3.10+ is required. Install the YAML continuity dependency:
+Install this repository as a personal Codex Skill, then invoke `$produce-long-form-novel` in Codex. Python 3.10+ is required; install the YAML continuity dependency before using that storage:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
+Start with the prompt that matches your situation:
+
+| Starting point | Example for Codex |
+| --- | --- |
+| No idea | “Use `$produce-long-form-novel`. I do not have a novel idea yet; show me opening seeds.” |
+| An idea | “Use `$produce-long-form-novel` to plan a long novel from this idea: …” |
+| Genre research | “Use `$produce-long-form-novel` to analyze recent public xianxia charts and create opportunity cards.” |
+| Reference analysis | “Use `$produce-long-form-novel` to analyze this text I am authorized to use. Estimate its size and confirm the reading scope and analysis focus first.” |
+| Fanfic | “Use `$produce-long-form-novel` to plan a fanfic continuation from this completed authorized analysis and its read scope.” |
+| Existing novel | “Use `$produce-long-form-novel` to continue `novels/<novel-name>/`. Check its state and next action first.” |
+
+**New books begin with progressive choices.** The five no-idea seeds emphasize a strong hook, character growth, setting wonder, relationship pull, and mystery investigation. After you choose, combine, or revise one, Codex presents two briefs with different conflicts, protagonist paths, progression loops, and tones. For a merely vague request, the first round asks only about audience, publishing format, and primary reader reward. `novel-brief.md` becomes authoritative after a direction is chosen.
+
+You can also inspect a local workspace from the command line:
+
 ```powershell
 python scripts/novelctl.py init novels/<novel-name> --title "<novel-title>"
-python scripts/novelctl.py set-opening-choices novels/<novel-name> --channel "male-oriented" --publication-format "free serial" --primary-reader-reward "growth and reversals"
 python scripts/novelctl.py status novels/<novel-name> --format markdown
 python scripts/novelctl.py next novels/<novel-name>
-python scripts/novelctl.py migrate novels/<novel-name> --dry-run
-python scripts/novelctl.py migrate novels/<novel-name>
 python scripts/novelctl.py validate novels/<novel-name>
-python scripts/novelctl.py reconcile novels/<novel-name>
-python scripts/novelctl.py approve novels/<novel-name> --target chapter_range --range-start 1 --range-end 5
 python scripts/novelctl.py export novels/<novel-name>
-python scripts/export_novel_txt.py novels/<novel-name>
-python scripts/check_continuity_workspace.py novels/<novel-name>
-python scripts/continuity_store.py migrate novels/<novel-name> --dry-run
-python scripts/analysis_retrieval.py build analyses/<analysis-name>
-python scripts/trend_snapshot.py validate trends/<scope>/snapshots/<date>/<platform>-<chart>.jsonl
-python scripts/token_usage.py record novels/<novel-name> --route novel --step chapter_draft --measurement unavailable --reason runtime_usage_not_exposed
-python scripts/token_usage.py summarize novels/<novel-name> --write
 ```
 
-`novels/`, `analyses/`, `trends/`, and `libraries/` are ignored by default to protect private manuscripts, source texts, research snapshots, and asset libraries.
+For an older workspace, run `python scripts/novelctl.py migrate novels/<novel-name> --dry-run` first. See [SKILL.md](SKILL.md), [workflow routing](references/workflow-routing.md), and [artifact contracts](references/artifact-contracts.md) for the full process.
 
-## Clear boundaries
+## Local reader
 
-- Chart research uses public metadata only; it does not infer guaranteed trends from a single snapshot.
-- Reference analysis requires authorized material and produces transferable mechanisms, not close imitation.
-- This is a writing workflow, not a hosting platform or a replacement for author judgment.
+The optional **ANI Local Reader** offers read-only browser access to `novels/` and `analyses/`: a bookshelf, full file tree, Chinese full-text search, headings, font and theme controls, chapter navigation, and analysis coverage and evidence views. It refreshes when files change. The Skill also works without it.
 
-## Origin and license
+With Node.js 22.18+ installed, run this from the repository root:
 
-This standalone, documentation-first Skill was distilled by the maintainer of [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant) from long-form production experience. It does not include or depend on that project's frontend, backend, database, or runtime services.
+```powershell
+./apps/workspace-reader/start-local.ps1
+```
 
-Repository files are released under the [Apache License 2.0](LICENSE). See the [changelog](docs/releases/release-notes.md) for the latest updates.
+Open <http://127.0.0.1:8790>. Pass `-Roots 'C:/writing', 'D:/research'` to read existing workspaces elsewhere. The reader accesses only configured local roots, does not call a model, and does not modify manuscripts or state. [Read the reader guide](apps/workspace-reader/README.md).
+
+## What keeps long-form work under control
+
+- **Editable local source.** `novels/`, `analyses/`, `trends/`, and `libraries/` are Git-ignored by default to protect manuscripts, source texts, research snapshots, and private assets.
+- **Recoverable state.** Accepted chapters, checkpoints, validation, and one next action make interrupted work resumable. Token usage distinguishes exact measurements, estimates, and values unavailable from the runtime.
+- **Governed cross-book reuse.** `libraries/` holds reusable mechanisms and shared-IP canon. `sync` reports changes or conflicts without overwriting prose. Timeline checks and impact review only report effects; canon publication needs author approval or active delegation. See the [cross-book asset graph contract](references/cross-book-asset-graph.md).
+- **Traceable research.** Chart research uses public metadata. Reference analysis uses authorized texts, records coverage and evidence, and does not treat source prose as copy-ready output.
+
+## Repository map
+
+```text
+SKILL.md                 Codex workflow entry point
+references/              Contracts for new books, analysis, fanfic, chapters, and cross-book assets
+scripts/                 Deterministic state, validation, retrieval, asset graphs, and export
+apps/workspace-reader/   Optional local read-only reader
+novels/ analyses/        Private writing and research workspaces (Git-ignored)
+trends/ libraries/       Private trend snapshots and cross-book assets (Git-ignored)
+```
+
+Codex is the sole creative understanding, generation, and judgment engine. This project has no separate model provider, agent runtime, or database authority. It was distilled by the maintainer of [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant) from long-form production experience, but does not depend on that project's frontend, backend, or services.
+
+Code and documentation use the [Apache License 2.0](LICENSE). See the [changelog](docs/releases/release-notes.md), [contribution guide](CONTRIBUTING.md), and [security policy](SECURITY.md).
 
 ## Latest update
 
-2026-09-30: Added the optional local reader, an analysis dashboard and explicit mechanism-to-chapter integration with original adaptations, pinned evidence, bounded context and review checks. Manuscripts and state remain authoritative local files. See the [changelog](docs/releases/release-notes.md) for the full history.
+### 2026-10-08
+
+- **Added:** Fanfic continuation and canon-based new-story routes after authorized analysis, with a separate workspace and a required handoff before production.
+- **Added:** Size estimates, scope confirmation, book-specific analysis focus, and searchable character cards for long reference works.
+- **Improved:** Vague new-book requests start with three key choices while retaining five no-idea seeds and two brief previews.
+- **Improved:** Both homepages now organize capabilities by the author's starting point and offer direct entry prompts.
+
+See the [changelog](docs/releases/release-notes.md) for the full history.

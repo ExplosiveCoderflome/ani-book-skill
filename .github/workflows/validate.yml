@@ -29,6 +29,7 @@ jobs:
           python scripts/check_continuity_workspace.py --help
           python scripts/continuity_store.py --help
           python scripts/analysis_retrieval.py --help
+          python scripts/estimate_analysis_tokens.py --help
           python scripts/trend_snapshot.py --help
           python scripts/token_usage.py --help
           python scripts/novelctl.py --help

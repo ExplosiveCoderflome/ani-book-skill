@@ -93,10 +93,12 @@ python scripts/analysis_retrieval.py status analyses/<名称>
 
 默认索引以下内容：
 
-- `notes/**/*.md`、`sections/**/*.md`；
+- `notes/**/*.md`、`sections/**/*.md`、`characters/**/*.md`；
 - 来源与覆盖清单；
 - 证据、不确定性和机制卡；
 - BookGraph 节点与边。
+
+不要索引 `source/` 中的原文快照。
 
 Markdown 按标题和长度切为稳定 chunk。脚本为中文建立二元/三元检索词，保存章节、维度和人物元数据，并验证图关系端点。
 

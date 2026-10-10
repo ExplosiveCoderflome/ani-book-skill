@@ -42,6 +42,7 @@ CHAPTER_STEPS = {
     "continuity_update",
 }
 STEP_ORDER = {
+    "fanfic_handoff": 5,
     "novel_brief": 10,
     "story_bible": 20,
     "world_bible": 30,
@@ -240,9 +241,9 @@ def approval_for(step: str, mode: str, existing_ready: bool = False) -> str:
     return "not_required"
 
 
-def initial_artifacts(mode: str) -> dict[str, Any]:
+def initial_artifacts(mode: str, novel_mode: str = "original") -> dict[str, Any]:
     definitions = [
-        ("novel_brief", "novel-brief.md", []),
+        ("novel_brief", "novel-brief.md", ["fanfic_handoff"] if novel_mode == "fanfic" else []),
         ("story_bible", "story-bible.md", ["novel_brief"]),
         ("world_bible", "world-bible.md", ["novel_brief", "story_bible"]),
         ("character_roster", "characters/character-roster.md", ["novel_brief", "story_bible"]),
@@ -250,6 +251,8 @@ def initial_artifacts(mode: str) -> dict[str, Any]:
         ("volume_01_skeleton", "volumes/volume-01.md", ["volume_strategy"]),
         ("volume_01_beat_sheet", "volumes/volume-01-beat-sheet.md", ["volume_01_skeleton"]),
     ]
+    if novel_mode == "fanfic":
+        definitions.insert(0, ("fanfic_handoff", "fanfic-handoff.md", []))
     result: dict[str, Any] = {}
     for key, path, dependencies in definitions:
         step = step_from_key(key)
@@ -287,11 +290,11 @@ def opening_choices_ready(state: dict[str, Any]) -> bool:
     )
 
 
-def initial_state(title: str, mode: str) -> dict[str, Any]:
-    return {
+def initial_state(title: str, mode: str, novel_mode: str = "original", source_analysis: dict[str, str] | None = None, fanfic_mode: str | None = None) -> dict[str, Any]:
+    state = {
         "schema_version": SCHEMA_VERSION,
         "workspace": {"persistence_mode": "workspace", "promoted_from_preview": False},
-        "novel": {"title": title, "mode": "original", "current_stage": "novel_brief"},
+        "novel": {"title": title, "mode": novel_mode, "current_stage": "fanfic_handoff" if novel_mode == "fanfic" else "novel_brief"},
         "opening_choices": {
             "status": "pending",
             "channel": None,
@@ -307,7 +310,7 @@ def initial_state(title: str, mode: str) -> dict[str, Any]:
             "requested_range": None,
             "stop_reason": None,
         },
-        "artifacts": initial_artifacts(mode),
+        "artifacts": initial_artifacts(mode, novel_mode),
         "continuity": {
             "baseline_chapter": None,
             "last_committed_chapter": None,
@@ -323,6 +326,12 @@ def initial_state(title: str, mode: str) -> dict[str, Any]:
         },
         "next_action": make_next("collect_opening_choices", "opening_choices", "开书前需确认频道、发布形态和主要阅读回报", True),
     }
+    if novel_mode == "fanfic":
+        state["novel"]["fanfic_mode"] = fanfic_mode
+        state["source_analysis"] = source_analysis
+        state.pop("opening_choices")
+        state["next_action"] = decide_next(state)
+    return state
 
 
 def ordered_artifacts(state: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
@@ -371,7 +380,7 @@ def decide_next(state: dict[str, Any]) -> dict[str, Any]:
         if current == "chapter_range" and director.get("stop_reason") == "requested_range_completed":
             return make_next("request_chapter_range", current, "已完成授权章节范围，需要用户指定下一范围", True)
         return make_next("approve_milestone", current, "当前里程碑需要用户批准", True)
-    if not opening_choices_ready(state):
+    if state.get("novel", {}).get("mode") != "fanfic" and not opening_choices_ready(state):
         return make_next("collect_opening_choices", "opening_choices", "开书前需确认频道、发布形态和主要阅读回报", True)
     for desired, action in (("in_progress", "resume_step"), ("blocked", "resolve_blocker"), ("stale", "refresh_artifact"), ("missing", "produce_artifact")):
         for key, artifact in ordered_artifacts(state):
@@ -395,6 +404,20 @@ def ensure_workspace_directories(workspace: Path) -> None:
 
 def command_init(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
+    source_analysis = None
+    if args.novel_mode == "fanfic":
+        if not all((args.source_analysis, args.fanfic_mode, args.read_scope, args.branch_chapter)):
+            raise ValueError("fanfic init requires --source-analysis, --fanfic-mode, --read-scope, and --branch-chapter")
+        source_path = Path(args.source_analysis).resolve()
+        source_state_path = source_path / "analysis-state.yaml"
+        if not source_state_path.is_file():
+            raise ValueError(f"missing analysis state: {source_state_path}")
+        source_state = yaml.safe_load(source_state_path.read_text(encoding="utf-8"))
+        source = source_state.get("source", {}) if isinstance(source_state, dict) else {}
+        fingerprint = source.get("fingerprint") if isinstance(source, dict) else None
+        if not isinstance(fingerprint, str) or not fingerprint.strip():
+            raise ValueError("analysis source fingerprint is missing")
+        source_analysis = {"path": str(source_path), "fingerprint": fingerprint, "read_scope": args.read_scope, "branch_chapter": args.branch_chapter}
     if workspace.exists() and any(workspace.iterdir()):
         raise ValueError(f"workspace is not empty: {workspace}")
     workspace.mkdir(parents=True, exist_ok=True)
@@ -403,7 +426,7 @@ def command_init(args: argparse.Namespace) -> int:
     for name in ("recovery.md", "quality-debt.md"):
         shutil.copy2(template / name, workspace / "production" / name)
     (workspace / "production" / "token-usage.jsonl").touch(exist_ok=True)
-    atomic_write_state(workspace, initial_state(args.title, args.mode))
+    atomic_write_state(workspace, initial_state(args.title, args.mode, args.novel_mode, source_analysis, args.fanfic_mode))
     print(json.dumps({"created": str(workspace), "schema_version": SCHEMA_VERSION, "mode": args.mode}, ensure_ascii=False, indent=2))
     return 0
 
@@ -477,11 +500,20 @@ def validation_report(workspace: Path, state: dict[str, Any]) -> tuple[list[str]
     if state.get("schema_version") not in SUPPORTED_READ_VERSIONS:
         errors.append("unsupported schema_version")
     if state.get("schema_version") == SCHEMA_VERSION:
-        choices = state.get("opening_choices")
-        if not isinstance(choices, dict) or choices.get("status") not in {"pending", "confirmed", "delegated", "legacy_migrated"}:
-            errors.append("opening_choices has invalid or missing status")
-        elif choices.get("status") in {"confirmed", "delegated"} and not opening_choices_ready(state):
-            errors.append("confirmed opening_choices requires three non-empty values")
+        if state.get("novel", {}).get("mode") == "fanfic":
+            source = state.get("source_analysis")
+            if state.get("novel", {}).get("fanfic_mode") not in {"continue_from_breakpoint", "new_story_with_canon"}:
+                errors.append("fanfic_mode is invalid")
+            if not isinstance(source, dict) or not all(isinstance(source.get(key), str) and source[key].strip() for key in ("path", "fingerprint", "read_scope", "branch_chapter")):
+                errors.append("source_analysis requires path, fingerprint, read_scope, and branch_chapter")
+            if not isinstance(state.get("artifacts"), dict) or "fanfic_handoff" not in state["artifacts"]:
+                errors.append("fanfic_handoff artifact is missing")
+        else:
+            choices = state.get("opening_choices")
+            if not isinstance(choices, dict) or choices.get("status") not in {"pending", "confirmed", "delegated", "legacy_migrated"}:
+                errors.append("opening_choices has invalid or missing status")
+            elif choices.get("status") in {"confirmed", "delegated"} and not opening_choices_ready(state):
+                errors.append("confirmed opening_choices requires three non-empty values")
     artifacts = state.get("artifacts")
     if not isinstance(artifacts, dict):
         errors.append("artifacts must be a mapping")
@@ -684,8 +716,11 @@ def command_start_step(args: argparse.Namespace) -> int:
         validate_chapter_asset_preflight(workspace, args.target)
     if args.step in CHAPTER_STEPS - {"continuity_update"}:
         validate_chapter_reference_preflight(workspace, args.target)
-    if args.step == "novel_brief" and not opening_choices_ready(state):
+    if args.step == "novel_brief" and state.get("novel", {}).get("mode") != "fanfic" and not opening_choices_ready(state):
         raise ValueError("confirm channel, publication format, and primary reader reward before novel_brief")
+    if state.get("novel", {}).get("mode") == "fanfic" and (args.step == "novel_brief" or args.step in CHAPTER_STEPS):
+        if state.get("artifacts", {}).get("fanfic_handoff", {}).get("status") != "ready":
+            raise ValueError("fanfic_handoff must be ready before novel brief or chapter production")
     key = artifact_key(args.step, args.target)
     artifacts = state["artifacts"]
     existing = artifacts.get(key)
@@ -896,6 +931,13 @@ def run_script(name: str, arguments: list[str]) -> int:
 
 def command_context(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
+    state = read_state(workspace)
+    fanfic_context = ""
+    if state.get("novel", {}).get("mode") == "fanfic":
+        handoff = state.get("artifacts", {}).get("fanfic_handoff", {})
+        if handoff.get("status") != "ready":
+            raise ValueError("fanfic_handoff must be ready before chapter context")
+        fanfic_context = artifact_location(workspace, handoff).read_text(encoding="utf-8").strip()
     reference_selection = analysis_reference.selection_path(workspace, args.chapter)
     reference_context = analysis_reference.render_context(workspace, args.chapter) if reference_selection.exists() or reference_selection.is_symlink() else ""
     if bool(args.asset_library) != bool(args.asset_selection):
@@ -910,7 +952,10 @@ def command_context(args: argparse.Namespace) -> int:
         asset_context = asset_graph.render_selection_context(args.asset_library.resolve(), workspace, selection, asset_budget)
     if (workspace / "continuity" / "data").is_dir():
         characters = {item.strip() for item in args.characters.split(",") if item.strip()}
-        rendered = continuity_store.assemble_context(workspace, args.chapter, characters, args.max_chars - asset_budget)
+        handoff_budget = min(len(fanfic_context), (args.max_chars - asset_budget) // 3)
+        rendered = continuity_store.assemble_context(workspace, args.chapter, characters, args.max_chars - asset_budget - handoff_budget)
+        if fanfic_context:
+            rendered = rendered.rstrip() + "\n\n## 同人交接\n" + fanfic_context[:handoff_budget]
         if asset_context:
             rendered = rendered.rstrip() + "\n\n" + asset_context
         if reference_context:
@@ -918,7 +963,7 @@ def command_context(args: argparse.Namespace) -> int:
         if args.output:
             relative_output = safe_relative_path(args.output)
             atomic_write_text(workspace / relative_output, rendered)
-            sources = ["continuity/data/*.yaml"] + ([safe_relative_path(args.asset_selection)] if args.asset_selection else [])
+            sources = ["continuity/data/*.yaml"] + (["fanfic-handoff.md"] if fanfic_context else []) + ([safe_relative_path(args.asset_selection)] if args.asset_selection else [])
             if reference_context:
                 sources.append(reference_selection.relative_to(workspace).as_posix())
             print(json.dumps({"written": relative_output, "sources": sources, "asset_budget": asset_budget}, ensure_ascii=False, indent=2))
@@ -927,7 +972,6 @@ def command_context(args: argparse.Namespace) -> int:
         return 0
     if args.asset_library:
         raise ValueError("cross-book context requires a migrated structured continuity store")
-    state = read_state(workspace)
     number = args.chapter
     selected: list[tuple[str, str]] = []
     candidates = [
@@ -941,6 +985,8 @@ def command_context(args: argparse.Namespace) -> int:
         "continuity/payoff-ledger.md",
         "continuity/resource-ledger.md",
     ]
+    if fanfic_context:
+        candidates.insert(1, "fanfic-handoff.md")
     if number > 1:
         candidates.insert(1, f"chapters/chapter-{number - 1:03d}/draft-humanized.md")
         candidates.insert(2, f"chapters/chapter-{number - 1:03d}/draft.md")
@@ -1014,6 +1060,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_workspace(init)
     init.add_argument("--title", required=True)
     init.add_argument("--mode", choices=sorted(DIRECTOR_MODES), default="milestone_approval")
+    init.add_argument("--novel-mode", choices=("original", "fanfic"), default="original")
+    init.add_argument("--source-analysis")
+    init.add_argument("--fanfic-mode", choices=("continue_from_breakpoint", "new_story_with_canon"))
+    init.add_argument("--read-scope")
+    init.add_argument("--branch-chapter")
     init.set_defaults(handler=command_init)
 
     migrate = commands.add_parser("migrate", help="back up and explicitly migrate a v1/v2 state")

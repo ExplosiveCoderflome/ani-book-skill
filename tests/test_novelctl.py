@@ -95,6 +95,39 @@ class NovelCtlTests(unittest.TestCase):
         checked = json.loads(self.run_cli("validate", str(self.workspace)).stdout)
         self.assertTrue(checked["valid"])
 
+    def test_fanfic_requires_handoff_before_novel_brief(self) -> None:
+        analysis = self.root / "analysis"
+        analysis.mkdir()
+        (analysis / "analysis-state.yaml").write_text(
+            'source:\n  fingerprint: "sha256:TEST"\n', encoding="utf-8"
+        )
+        self.run_cli(
+            "init", str(self.workspace), "--title", "测试同人", "--novel-mode", "fanfic",
+            "--source-analysis", str(analysis), "--fanfic-mode", "new_story_with_canon",
+            "--read-scope", "第1-3章", "--branch-chapter", "第3章",
+        )
+        state = self.read_state()
+        self.assertEqual("fanfic_handoff", state["next_action"]["target"])
+        self.assertNotIn("opening_choices", state)
+        self.assertTrue(json.loads(self.run_cli("validate", str(self.workspace)).stdout)["valid"])
+        blocked = self.run_cli(
+            "start-step", str(self.workspace), "--step", "novel_brief",
+            "--target", "novel_brief", "--artifact", "novel-brief.md", check=False,
+        )
+        self.assertNotEqual(0, blocked.returncode)
+        self.run_cli(
+            "start-step", str(self.workspace), "--step", "fanfic_handoff",
+            "--target", "fanfic_handoff", "--artifact", "fanfic-handoff.md",
+        )
+        (self.workspace / "fanfic-handoff.md").write_text("# 同人交接\n已读范围：第1-3章\n", encoding="utf-8")
+        self.run_cli(
+            "finish-step", str(self.workspace), "--step", "fanfic_handoff",
+            "--target", "fanfic_handoff", "--artifact", "fanfic-handoff.md",
+            "--measurement", "unavailable", "--reason", "runtime_usage_not_exposed",
+        )
+        self.assertEqual("novel_brief", json.loads(self.run_cli("next", str(self.workspace)).stdout)["target"])
+        self.assertIn("fanfic-handoff.md", self.run_cli("context", str(self.workspace), "--chapter", "1").stdout)
+
     def test_finish_records_usage_before_ready_and_waits_for_approval(self) -> None:
         self.init_workspace()
         relative = "novel-brief.md"

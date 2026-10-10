@@ -109,6 +109,27 @@ next_action:
   requires_approval: false
 ```
 
+同人工作区将 `mode` 设为 `fanfic`，并增加 `fanfic_mode`、`source_analysis` 与交接产物：
+
+```yaml
+novel:
+  title: "待定"
+  mode: "fanfic"
+  fanfic_mode: "continue_from_breakpoint"  # 或 new_story_with_canon
+  current_stage: "fanfic_handoff"
+source_analysis:
+  path: "analyses/<规范化书名>"
+  fingerprint: "sha256:<value>"
+  read_scope: "第X-Y章"
+  branch_chapter: "第Y章"
+artifacts:
+  fanfic_handoff:
+    path: "fanfic-handoff.md"
+    status: "missing"
+```
+
+同人交接未 `ready` 前，不把章节计划或正文标为可写。细则见 [fanfic.md](fanfic.md)。
+
 使用状态：`missing`、`in_progress`、`ready`、`stale`、`blocked`。不要用 `completed` 掩盖仍需用户确认或仍缺上游依赖的产物。
 
 使用来源：`ai_generated`、`user_edited`、`imported`。只要用户修改过产物，就将 `protected` 设为 `true`，除非用户明确交还 AI 重写。

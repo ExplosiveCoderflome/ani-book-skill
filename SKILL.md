@@ -1,6 +1,6 @@
 ---
 name: produce-long-form-novel
-description: Produce, maintain, analyze, and export long-form Chinese novels through staged, editable artifacts, with progressive confirmation of high-impact creative settings for novice authors. Use when Codex needs to turn an idea into a novel plan, guide choices such as audience channel or genre, analyze public ranking metadata for hot genres, deconstruct an authorized reference novel or diagnose a manuscript, design or revise volumes, generate chapter plans or prose, continue an existing novel, audit and repair chapters, export ready chapters as a TXT file, or decide the next production step from an existing Markdown/YAML workspace. Do not use for generic app development, database operations, unauthorized bulk copying, or unrelated short-form copywriting.
+description: Produce, maintain, analyze, and export long-form Chinese novels through staged, editable artifacts, with progressive confirmation of high-impact creative settings for novice authors. Use when Codex needs to turn an idea into a novel plan, guide choices such as audience channel or genre, analyze public ranking metadata for hot genres, deconstruct an authorized reference novel or diagnose a manuscript, write fanfic from an authorized analysis workspace, design or revise volumes, generate chapter plans or prose, continue an existing novel, audit and repair chapters, export ready chapters as a TXT file, or decide the next production step from an existing Markdown/YAML workspace. Do not use for generic app development, database operations, unauthorized bulk copying, or unrelated short-form copywriting.
 ---
 
 # Produce Long-Form Novel
@@ -28,6 +28,8 @@ python scripts/sync_skill_mirror.py check <repository-root> <installed-skill-dir
 
 When a user explicitly says they have no story idea, do **not** begin with the three opening settings or a full premise. Read [opening-seeds.md](references/opening-seeds.md), run its private divergence and quality-gate process, then output exactly five non-authoritative, one-sentence opening seeds. Ask the user to choose one, edit one, or provide an original idea.
 
+For a vague request without an explicit “no idea” statement, start with three high-impact choices: audience channel, publishing shape, and genre or primary reader reward. Do not ask about protagonist, style, or length in that first round or generate a full hook package. These choices remain provisional until the user confirms them or delegates the decision.
+
 When the user supplies an initial idea or selects one opening seed, generate exactly two non-authoritative new-book brief previews before formal planning. Each preview must include a working title, one-sentence premise, target reader/reward, protagonist path, core conflict, early hook, progression loop, and high-level ending direction. The two previews must differ materially in their selling point, conflict, protagonist path, progression loop, tone, or ending direction. Do not write either preview to `novel-brief.md`, mark it `ready`, or use it for world, volume, or chapter production until the user selects, combines, or delegates a direction.
 
 Use Markdown for creative artifacts and a small `novel-state.yaml` file for progress. In a legacy workspace, keep continuity ledgers as readable Markdown. In a migrated workspace, YAML is the sole continuity authority and Markdown ledgers are generated read-only views; SQLite is a disposable local index. Do not require JSON unless the user explicitly requests machine integration or export.
@@ -52,11 +54,14 @@ Choose one primary route before acting:
 4. **Audit or repair**: diagnose a supplied plan or chapter, apply the smallest useful repair, and preserve successful content.
 5. **Continue an existing novel**: inspect current artifacts, recover the next valid production step, and continue without rewriting protected work.
 6. **Analyze a reference work**: deconstruct an authorized local text, accessible online source, or the user's manuscript into evidence-backed notes, analysis sections, and reusable pattern cards without reproducing the source.
-7. **Analyze hot genre trends**: inspect public official chart metadata or user-provided chart captures, aggregate surface signals, and produce a chart-level report plus 3–5 opportunity cards without reading novel prose.
+7. **Write fanfic from an analysis**: use an authorized analysis workspace as canon facts, keep original names within the read scope, and produce a fanfic novel workspace with a handoff before chapter drafting.
+8. **Analyze hot genre trends**: inspect public official chart metadata or user-provided chart captures, aggregate surface signals, and produce a chart-level report plus 3–5 opportunity cards without reading novel prose.
 
 Read [workflow-routing.md](references/workflow-routing.md) when the request spans routes, the next step is unclear, or an existing workspace may be incomplete.
 
 Read [novel-brief.md](references/novel-brief.md) when creating or revising a novel brief. Keep its reader, length, narrative and writing-preference settings authoritative for later planning and chapter production.
+
+Read [fanfic.md](references/fanfic.md) when the user asks for fanfic, a continuation that keeps original names, or a new story that reuses an analyzed cast. Original novels still must not copy source names, recognizable appearance sets, or signature scenes from analysis cards.
 
 ## Guide Creative Decisions Progressively
 
@@ -64,6 +69,7 @@ Apply the progressive-confirmation contract in [novel-brief.md](references/novel
 
 - Before asking, extract explicit choices from the current request and read existing confirmation records and protected artifacts. Do not ask again about settings marked user-confirmed, delegated to AI, or not applicable.
 - For an explicit no-idea request such as “I have no idea; help me start a novel,” use the five-opening-seed contract in Mission. For any supplied idea or selected seed, use the two-brief-preview contract before asking for opening settings. Do not silently select a genre, channel, platform, or length and then present an authoritative plan.
+- For a vague request that does not explicitly say there is no idea, use the three-choice first round in Mission. At most, add one short illustrative premise marked non-authoritative.
 - Ask only the 2–3 unresolved choices with the greatest downstream impact. Give exactly 2–4 mutually exclusive content options per choice, put one recommendation first, and explain its effect briefly. Keep custom input, accept-all, AI delegation, and skip as one shared instruction after the choices; do not inflate each option list with these controls.
 - Treat “you decide,” “do not ask me about these,” or “generate directly” as revocable project-level delegation for the affected settings. Persist it in the novel brief when workspace mode is active.
 - When the request is already specific, summarize the understood idea, produce two meaningfully different brief previews, and ask only for direction selection or material conflicts. After a direction is selected, ask only the unresolved opening settings required by the current milestone.
@@ -71,7 +77,7 @@ Apply the progressive-confirmation contract in [novel-brief.md](references/novel
 - Allow unconfirmed AI recommendations in bounded conversation previews only after presenting the current confirmation choices. Do not save them as authoritative, mark their artifact `ready`, or build formal downstream assets from them until the user confirms or delegates the decision.
 - When a confirmed high-impact setting changes, protect existing prose and immediately use the explicit `stale` status for each affected unwritten artifact; do not merely say it is “affected,” defer impact reporting, or silently rewrite it. A confirmed audience-channel or reading-promise change makes the existing unwritten volume strategy, volume skeleton, beat sheet, and chapter plans `stale` unless a dependency check proves a specific artifact unaffected.
 - Treat male-oriented, female-oriented, and broad-audience channels as reader-promise and packaging signals, never as rigid gender stereotypes.
-- Keep this confirmation sequence on the novel-creation route. Reference analysis and hot-genre trends retain their own scope and source-confirmation rules.
+- Keep this confirmation sequence on the novel-creation route. Reference analysis, fanfic, and hot-genre trends retain their own scope and source-confirmation rules.
 
 ## Start from Facts
 
@@ -127,7 +133,11 @@ Read [book-analysis-retrieval.md](references/book-analysis-retrieval.md) before 
 
 - Persist analysis only under `analyses/<normalized-title>/` with `analysis-state.yaml` and the artifact layout defined in `book-analysis.md`. Do not use `novels/`, `novel-state.yaml`, or an invented competing layout for analysis unless the user explicitly asks to attach the results to an existing novel workspace.
 - Accept user-provided text, local text files, existing workspaces, and lawfully accessible online pages. Do not bypass paywalls, login controls, captchas, anti-bot restrictions, or site access rules; request a user-supplied file when access is unavailable.
-- Freeze the source scope and fingerprint before analysis. Distinguish full coverage from sampling, and state omitted ranges and blind spots.
+- On an authorized, accessible source, record the visible reader payoff first. Record rules, identity, and information gaps when they enable or block that payoff; keep source facts and short quotes accurate.
+- Freeze the source scope and fingerprint before analysis. Copy a user-supplied local file or chapter directory into private `source/` as a snapshot, and never index `source/` in retrieval. Distinguish full coverage from sampling, and state omitted ranges and blind spots.
+- Before the first segment note, run `scripts/estimate_analysis_tokens.py` on the local source. Report the character count, planned segment count, and source-token range as a length estimate, separate from model usage. If it sets `confirm_required`, ask for full analysis or a bounded partial window; record `remaining_scope` for later incremental analysis.
+- After coverage is confirmed and before the first note batch, draft `analysis-lens.md` from this book's visible reader payoff and the gates that affect it. Self-check it, show its one-sentence payoff and primary questions, set it to `pending_confirm`, and wait for acceptance before notes. Existing notes without a lens remain intact; add the lens before the next batch.
+- If `character_sync.status` is `unconfirmed`, ask whether to maintain individual `characters/<CHAR-ID>.md` cards. When enabled, update relevant cards after each note batch, using only observed details and chapter evidence.
 - Build bounded segment notes first. Generate the overview before specialist sections so later judgments share one positioning anchor.
 - After notes exist for a long source, run `scripts/analysis_retrieval.py build <analysis-workspace>`. Use graph traversal for explicit relationships, filtered lexical search for named facts, and optional vector recall only when compatible embeddings already exist.
 - Treat `retrieval/analysis-index.sqlite3` and embeddings as disposable derived caches. Keep Markdown/YAML, graph JSONL, source fingerprints, and user edits authoritative.
@@ -136,6 +146,10 @@ Read [book-analysis-retrieval.md](references/book-analysis-retrieval.md) before 
 - When using analysis resources in a new or continuing novel, read [analysis-to-novel.md](references/analysis-to-novel.md). Select mechanisms against the current book/chapter need, propose an original adaptation, and validate the pinned evidence before adding craft references to chapter context. Reference conclusions never become this novel's continuity facts.
 - Keep successful analysis sections when another section fails. Resume only missing or stale work, and mark downstream analysis stale when the source fingerprint or scope changes.
 - When the source is the user's own manuscript, use diagnosis mode and recommend bounded repairs without modifying the manuscript unless explicitly authorized.
+
+## Write Fanfic from an Analysis
+
+Read [fanfic.md](references/fanfic.md) before continuing an analyzed novel under its original names or writing a new story with its cast. Use only facts covered by an authorized analysis workspace, confirm continuation versus a new story, and keep `fanfic-handoff.md` in progress until its source scope, branch point, storyline, and pace are ready. A continuation branches from the last fully noted chapter ending. Write fanfic prose only in its own `novels/` workspace and do not treat unread chapters as canon.
 
 ## Analyze Hot Genre Trends
 

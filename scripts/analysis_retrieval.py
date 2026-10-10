@@ -118,6 +118,8 @@ def source_kind(relative_path: str) -> str:
         return "note"
     if normalized.startswith("sections/"):
         return "section"
+    if normalized.startswith("characters/"):
+        return "character"
     if normalized == "evidence-ledger.md":
         return "evidence"
     if normalized == "pattern-cards.md":
@@ -165,7 +167,7 @@ def split_markdown(text: str, max_chars: int, overlap: int) -> list[tuple[str, s
 
 def discover_markdown(workspace: Path) -> list[Path]:
     candidates: list[Path] = []
-    for directory in (workspace / "notes", workspace / "sections"):
+    for directory in (workspace / "notes", workspace / "sections", workspace / "characters"):
         if directory.is_dir():
             candidates.extend(directory.rglob("*.md"))
     for name in (
@@ -704,7 +706,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--index")
     search.add_argument("--limit", type=int, default=8)
-    search.add_argument("--kind", choices=("note", "section", "evidence", "pattern", "uncertainty", "manifest"))
+    search.add_argument("--kind", choices=("note", "section", "character", "evidence", "pattern", "uncertainty", "manifest"))
     search.add_argument("--chapter", type=int)
     search.add_argument("--dimension")
     search.add_argument("--character")

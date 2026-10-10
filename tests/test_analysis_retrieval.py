@@ -19,6 +19,7 @@ class AnalysisRetrievalCliTest(unittest.TestCase):
         self.workspace = Path(self.temporary.name)
         (self.workspace / "notes").mkdir()
         (self.workspace / "sections").mkdir()
+        (self.workspace / "characters").mkdir()
         (self.workspace / "graph").mkdir()
         (self.workspace / "analysis-state.yaml").write_text(
             'source:\n  fingerprint: "sha256:TEST"\n',
@@ -37,6 +38,9 @@ class AnalysisRetrievalCliTest(unittest.TestCase):
         (self.workspace / "sections" / "overview.md").write_text(
             "# 总览\n\n当前样本显示故事依靠升级与身份悬念推动追读。\n",
             encoding="utf-8",
+        )
+        (self.workspace / "characters" / "CHAR-001.md").write_text(
+            "# 林越\n\n独有形象锚点：银色护目镜。\n", encoding="utf-8"
         )
         nodes = [
             {"id": "CHAR-001", "type": "character", "label": "林越", "source_refs": ["segment-001"], "confidence": "high"},
@@ -88,6 +92,11 @@ class AnalysisRetrievalCliTest(unittest.TestCase):
         self.assertTrue(search)
         self.assertEqual(search[0]["path"], "notes/segment-001.md")
         self.assertIn("lexical", search[0]["reasons"])
+
+        character = json.loads(self.run_cli(
+            "search", str(self.workspace), "银色护目镜", "--kind", "character", "--format", "json"
+        ).stdout)
+        self.assertEqual("characters/CHAR-001.md", character[0]["path"])
 
         index_path = self.workspace / "retrieval" / "analysis-index.sqlite3"
         connection = sqlite3.connect(index_path)
