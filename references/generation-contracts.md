@@ -14,6 +14,8 @@ Codex 是唯一生成与创作判断引擎。每个生成步骤必须消费权�
 
 使用以下稳定状态：`missing`、`in_progress`、`ready`、`stale`、`blocked`。用户编辑和已验收正文优先于状态投影；不得为了恢复状态覆盖内容。
 
+每步的必需依赖必须存在、就绪、批准且文件指纹一致；显式补充依赖不能移除必需上游。后续章节以连续性已提交章号承接。审校开始时锁定正文、计划、上下文和写法版本，结束时再次核对；输入改变时重启审校。通过验收的实际正文自动保护，旧审校不得沿用到新候选。旧工作区缺少审校版本绑定时，先重新审校，不补造历史批准。
+
 ## 步骤目录
 
 | 步骤 ID | 必需上游 | 默认产物 | 核心验收 | 失败处理 |
@@ -27,7 +29,7 @@ Codex 是唯一生成与创作判断引擎。每个生成步骤必须消费权�
 | `chapter_plan` | 当前窗口、上一稳定章 | `chapters/chapter-XXX/plan.md` | 章节义务和读者体验合同完整 | 补计划，不写正文 |
 | `context_package` | 章节计划、权威事实、可选跨书资产选择 | `chapters/chapter-XXX/context-package.md` | 必需来源、裁剪项和缺口可解释；选中资产有固定快照和回读路径 | 缺硬约束或选中资产冲突时阻断 |
 | `chapter_draft` | 计划、上下文包 | `draft.md` | 有可读正文并完成主要义务 | 无可用正文时阻断 |
-| `humanization_revision` | 完整初稿 | `draft-humanized.md` | 保留事实与合同，减少成簇模板感 | 保留初稿并记录风险 |
+| `humanization_revision` | 完整初稿、本章有效写法 | `draft-humanized.md` | 保留事实与合同，只修有证据的成簇表达问题 | 保留初稿并记录风险 |
 | `chapter_review` | 最终正文候选、同一章节合同 | `review.md` | 给出结构化判定与证据 | 审查不可用记系统风险 |
 | `chapter_repair` | review、保护清单 | 修订正文、更新 review | 局部一次、整章最多一次 | 可读则质量债，否则阻断 |
 | `continuity_update` | 稳定正文、accepted 或安全 warning | delta、YAML/台账、recovery | 只提交已发生事实 | 失败时保持正文稳定、状态未提交 |
@@ -36,13 +38,13 @@ Codex 是唯一生成与创作判断引擎。每个生成步骤必须消费权�
 
 用户批准一个章节范围后，对每章严格执行：
 
-`计划 -> 最小上下文 -> 整章初稿 -> 一次人性化 -> 审查 -> 必要修复 -> 连续性提交`
+`计划 -> 最小上下文与有效写法 -> 整章初稿 -> 一次受约束表达修订 -> 同合同审查 -> 必要修复 -> 连续性提交`
 
 当前章没有成为稳定事实源前，不得规划下一章、创建候选正文或让子代理预热。每十章或卷末创建检查点。
 
 使用跨书资产时，Codex 先创建可编辑的 `context-packages/chapter-XXX.assets.yaml`，再装配正文上下文。脚本只校验稳定 ID、锁定版本、本书快照、预算和冲突；不得从计划文本猜测资产，也不得自动采用共享更新。选中的同步冲突会阻断 `context_package`、`chapter_draft` 和 `chapter_review`。
 
-通过 `novelctl finish-step` 完成 `chapter_review` 时，必须记录 `--review-decision accepted`、`repair_required` 或 `stop_for_replan`。`accepted` 直接进入连续性提交；`repair_required` 先进入修复；`stop_for_replan` 是结构性阻断。修复步骤默认第一次为局部修复、第二次为整章修复，超过两次不得继续重写，应记录质量债或进入明确重规划。
+通过 `novelctl finish-step` 完成 `chapter_review` 时，必须记录 `--review-decision accepted`、`repair_required` 或 `stop_for_replan`。`accepted` 直接进入连续性提交；`repair_required` 先进入修复并重新审校，只有取得 `accepted` 才提交；`stop_for_replan` 是结构性阻断。修复步骤默认第一次为局部修复、第二次为整章修复，超过两次不得继续重写，应记录质量债或进入明确重规划。
 
 连续性提交后，Codex 可以把可复用结论写为 `production/asset-candidates/chapter-XXX/` 下的候选 YAML。该候选必须绑定已提交章节、正文 SHA-256 和证据；发布前仍由 `asset_graph.py verify-candidate` 与既有作者批准/委托规则校验。
 

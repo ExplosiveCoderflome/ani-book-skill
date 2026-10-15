@@ -63,6 +63,7 @@ class ContinuityStoreCliTests(unittest.TestCase):
         )
 
     def test_migrate_render_index_context_checkpoint_and_validate(self) -> None:
+        original_state = (self.workspace / "novel-state.yaml").read_bytes()
         preview = self.run_cli("migrate", str(self.workspace), "--dry-run")
         self.assertIn('"facts": 1', preview.stdout)
         self.assertFalse((self.workspace / "continuity/data").exists())
@@ -78,7 +79,10 @@ class ContinuityStoreCliTests(unittest.TestCase):
         self.assertEqual(facts[0]["introduced_in"], "chapter-011")
         self.assertFalse(any("012" in str(item) for item in facts))
         state = yaml.safe_load((self.workspace / "novel-state.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(state["schema_version"], 3)
+        self.assertEqual(state["schema_version"], 2)
+        backups = list(self.workspace.glob("novel-state.yaml.bak.*"))
+        self.assertEqual(1, len(backups))
+        self.assertEqual(original_state, backups[0].read_bytes())
         self.assertEqual(state["continuity"]["structured_store"]["authority"], "yaml")
         self.assertIn("generated-from: continuity/data revision 1", (self.workspace / "continuity/fact-ledger.md").read_text(encoding="utf-8"))
 
@@ -94,6 +98,26 @@ class ContinuityStoreCliTests(unittest.TestCase):
         self.run_cli("build-index", str(self.workspace))
         self.run_cli("checkpoint", str(self.workspace), "--chapter", "chapter-020", "--reason", "volume-end")
         self.assertTrue((self.workspace / "continuity/data/checkpoints/checkpoint-020.yaml").is_file())
+
+    def test_novel_context_keeps_plan_and_one_previous_tail_after_migration(self) -> None:
+        (self.workspace / "novel-brief.md").write_text("# 简报\n调查与解谜。", encoding="utf-8")
+        previous = self.workspace / "chapters/chapter-011"
+        previous.mkdir()
+        (previous / "draft-humanized.md").write_text("OLD_PREFIX" + "旧" * 4000 + "ACCEPTED_TAIL", encoding="utf-8")
+        (previous / "draft.md").write_text("DO_NOT_DUPLICATE_RAW_DRAFT", encoding="utf-8")
+        (self.workspace / "writing-style.md").write_text("STYLE-01：对白不代替行动。", encoding="utf-8")
+        self.run_cli("migrate", str(self.workspace))
+        cmd = [sys.executable, str(ROOT / "scripts/novelctl.py"), "context", str(self.workspace), "--chapter", "12"]
+        result = subprocess.run(cmd + ["--max-chars", "9000"], capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(0, result.returncode, result.stderr)
+        for required in ("未验收第十二章", "ACCEPTED_TAIL", "STYLE-01", "FACT-001"):
+            self.assertIn(required, result.stdout)
+        self.assertNotIn("DO_NOT_DUPLICATE_RAW_DRAFT", result.stdout)
+        self.assertNotIn("OLD_PREFIX", result.stdout)
+        self.assertLessEqual(len(result.stdout), 9000)
+        rejected = subprocess.run(cmd + ["--max-chars", "1000"], capture_output=True, text=True, encoding="utf-8")
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertIn("required source", rejected.stderr)
 
     def test_validate_rejects_duplicate_ids_and_future_fact(self) -> None:
         self.run_cli("migrate", str(self.workspace))

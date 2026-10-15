@@ -27,11 +27,12 @@ Your creative work remains in editable local files, with evidence and a clear ne
 | **Analyzing a reference book** | Estimate the length and segmentation of an authorized text, choose full or partial coverage, then build evidence-based segment notes, character cards, and searchable craft mechanisms using a book-specific analysis lens. |
 | **Writing fanfic** | Work from authorized facts within the read scope. Continue from the last fully documented chapter ending or write a new story using the established canon. Complete `fanfic-handoff.md` before entering a separate novel workspace. |
 | **Serializing a long novel** | Move from the story engine and volume plan to complete chapter prose, humanization, review, continuity updates, and a recoverable next action. |
+| **Keeping a consistent voice** | Distill an editable style contract from your own writing, accepted chapters, or authorized analysis; apply it across drafting, anti-template revision, review, and targeted repair. |
 | **Writing a series or shared universe** | Reuse accepted assets through `fork` / `sync`, check canon timelines and impact, and keep publication and conflict decisions with the author. |
 
 ### Turn research into writing decisions
 
-A reference analysis is more than a long report. The size estimate helps you choose a practical reading scope. `analysis-lens.md` fixes the questions for each book. Segment notes and character cards retain evidence, while retrieval helps find it again. Source text is used only for authorized analysis; search results do not replace verifiable notes.
+A reference analysis is more than a long report. The size estimate helps you choose a practical reading scope. `analysis-lens.md` compares core reader promises first, then keeps the subject matter, psychological progression, relationship structure, and surface payoff axes separate. Segment notes and character cards retain evidence, while retrieval helps find it again. Source text is used only for authorized analysis; search results do not replace verifiable notes.
 
 The local reader's analysis dashboard shows planned and actual coverage, gaps, focused analyses, mechanisms, and evidence health. It can prepare a request for a target novel and chapter. Codex then proposes an **original adaptation**, validates pinned references, adds bounded craft guidance to chapter context, and checks the outcome during review. See the [analysis guide](references/book-analysis.md), [retrieval guide](references/book-analysis-retrieval.md), and [analysis-to-novel workflow](references/analysis-to-novel.md).
 
@@ -40,6 +41,10 @@ The local reader's analysis dashboard shows planned and actual coverage, gaps, f
 `Direction → story engine → volume/chapter plan → complete chapter → revision and review → continuity → next chapter`
 
 Each chapter loads only the context it needs. Facts, promises, resources, character state, and relationships enter durable memory after acceptance; unreviewed candidates never become story facts. YAML and accepted Markdown are authoritative. SQLite indexes and reader views are rebuildable. User edits to prose and artifacts are protected, and older workspaces can be checked, backed up, and explicitly migrated.
+
+An optional [writing-style contract](references/style-engine.md) keeps a small, reviewable set of positive style choices and anti-template concerns. Beginners can write their first chapter without configuring it. When selected, it guides the first draft; review and repair use evidence from the prose rather than detector scores or blanket word bans.
+
+For optional external help, a novel workspace can register GitHub writing-style or humanization Skills. Candidates are fetched into a private directory, pinned to a commit, reviewed, and author-approved before activation; chapter production never silently fetches remote content, and remote rules cannot override the local contract.
 
 ## Get started
 
@@ -110,11 +115,10 @@ Code and documentation use the [Apache License 2.0](LICENSE). See the [changelog
 
 ## Latest update
 
-### 2026-10-08
+### 2026-10-15
 
-- **Added:** Fanfic continuation and canon-based new-story routes after authorized analysis, with a separate workspace and a required handoff before production.
-- **Added:** Size estimates, scope confirmation, book-specific analysis focus, and searchable character cards for long reference works.
-- **Improved:** Vague new-book requests start with three key choices while retaining five no-idea seeds and two brief previews.
-- **Improved:** Both homepages now organize capabilities by the author's starting point and offer direct entry prompts.
+- **Added:** Local content, size, and version checks for GitHub writing-style and humanization Skill candidates.
+- **Improved:** Core reader promises carry from analysis into writing, author corrections persist, and selected directions can proceed directly with relevant genre dimensions.
+- **Fixed:** Accepted-prose protection, review version binding, required inputs, chapter volume selection, continuity recovery, and stable exports.
 
 See the [changelog](docs/releases/release-notes.md) for the full history.

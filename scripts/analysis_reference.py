@@ -57,8 +57,22 @@ def registry(root: Path) -> tuple[dict[str, Any], dict[str, Any], str]:
     source = state.get("source")
     if not isinstance(source, dict):
         raise ValueError("analysis source metadata is missing")
+    lens = state.get("analysis_lens")
+    if isinstance(lens, dict) and lens.get("status") != "ready":
+        raise ValueError("analysis lens is not ready; confirm the core promise first")
+    artifacts = state.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        raise ValueError("analysis artifacts must be a mapping")
+    for artifact in artifacts.values():
+        if isinstance(artifact, dict) and artifact.get("path") == "pattern-cards.yaml":
+            if artifact.get("status") != "ready":
+                raise ValueError("mechanism registry is not ready")
     path = local_file(root, "pattern-cards.yaml")
     data = mapping(path)
+    for artifact in artifacts.values():
+        if isinstance(artifact, dict) and artifact.get("path") == "pattern-cards.yaml":
+            if artifact.get("sha256") and artifact["sha256"] != digest(path):
+                raise ValueError("mechanism registry state fingerprint changed")
     if data.get("schema_version") != 1 or not isinstance(data.get("cards"), list):
         raise ValueError("unsupported mechanism registry")
     if not isinstance(data.get("source"), dict):
@@ -77,8 +91,11 @@ def registry(root: Path) -> tuple[dict[str, Any], dict[str, Any], str]:
 def validate_card(root: Path, card: dict[str, Any], state: dict[str, Any]) -> None:
     if card.get("status") != "ready":
         raise ValueError(f"mechanism is not ready: {card['id']}")
-    for key in ("title", "scope", "problem", "mechanism", "payoff"):
+    for key in ("title", "scope", "core_promise", "problem", "mechanism", "payoff"):
         text(card.get(key), key)
+    for key in ("stimulus_object", "viewing_position", "psychological_progression", "return_attachment"):
+        if key in card:
+            text(card[key], key)
     for key in ("prerequisites", "failure_modes", "forbidden_elements"):
         strings(card.get(key), key)
     evidence = card.get("evidence")
@@ -171,7 +188,10 @@ def render_context(workspace: Path, chapter: int, max_chars: int | None = None) 
         card, source, application = entry["card"], entry["source"], entry["application"]
         lines += [f"### {card['id']} · {card['title']}", f"- 来源：{entry['root']}；来源范围：{source['scope']}（{source['coverage']}）；机制依据范围：{card['scope']}",
                   f"- 来源指纹：{source['fingerprint']}", f"- 解决问题：{card['problem']}", f"- 运作机制：{card['mechanism']}",
-                  f"- 前提：{'；'.join(card['prerequisites'])}", f"- 读者回报：{card['payoff']}",
+                  f"- 前提：{'；'.join(card['prerequisites'])}", f"- 核心阅读承诺：{card['core_promise']}",
+                  *[f"- {label}：{card[key]}" for key, label in (("stimulus_object", "刺激对象"), ("viewing_position", "观看位置"),
+                     ("psychological_progression", "心理推进"), ("return_attachment", "回归/依恋")) if key in card],
+                  f"- 读者回报：{card['payoff']}",
                   f"- 失败方式：{'；'.join(card['failure_modes'])}", f"- 本章用途：{application['use_for']}",
                   f"- 原创改造：{application['adaptation']}", f"- 不可照搬：{'；'.join(card['forbidden_elements'] + application['avoid'])}",
                   f"- 审校检查：{application['success_check']}",
@@ -183,6 +203,9 @@ def render_context(workspace: Path, chapter: int, max_chars: int | None = None) 
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     scan = commands.add_parser("inspect", help="list mechanism readiness without writing")

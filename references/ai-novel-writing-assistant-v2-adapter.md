@@ -23,6 +23,8 @@
 | `analyses/*/sections/*` | `BookAnalysisSection` 的 Markdown、structured data 与 evidence |
 | `evidence-ledger.md` | 字段级 evidence、章节锚点与原文 offset；Skill 额外记录置信度和反例 |
 | `pattern-cards.md` | 从拆书结论提炼的原创机制卡；项目侧可映射到写法资产或续写上下文 |
+| `writing-style.md` / 私有 `styles/*` | 本书有效写法快照 / 可复用的抽象写法卡；对应 Style Intent、写法绑定与有效表达合同 |
+| 通用反模板化基线与本书规则 | 原项目的全局反 AI 基线、写法专属规则及修文权限；在 Skill 中以 Markdown 合同和正文证据执行 |
 | `graph/nodes.jsonl` 与 `graph/edges.jsonl` | Skill 的轻量 BookGraph；导入项目时映射到当前知识图谱或结构化 RAG 合同，不直接写数据库 |
 | `retrieval/analysis-index.sqlite3` | 可重建的本地派生索引，不作为项目数据库或知识库权威源 |
 
@@ -48,12 +50,17 @@
 | 卷战略、骨架与节奏窗口 | `story-and-volume-planning.md` 与卷产物 |
 | Chapter Obligation Contract | `chapter-production.md` 的共享章节合同 |
 | Reader Experience Contract | 读者问题、回报、转折、净变化与章末牵引 |
+| 写法引擎 / 反 AI 规则 | `style-engine.md` 的写法来源、书级快照、章节例外及同合同生成、审校、局部修文 |
 | Context Broker | 最小 `context-package.md` 与确定性上下文装配 |
 | acceptance / repair / debt | `quality-and-repair.md` 的有限质量循环 |
 | 状态、资源与伏笔回灌 | YAML 连续性权威源和章节 delta |
 | Token 与任务诊断 | 追加式 Token 账本、状态校验和恢复报告 |
 
 明确不迁移 React、Express、Prisma、HTTP 路由、任务队列、Provider 适配层、自研 Agent Runtime、Prompt Workbench UI 和桌面打包代码。
+
+写法提取只迁移可观察的表达方法及原创性边界；不复制原项目的 UI、Prompt Compiler、数据库绑定或检测分数阈值。Skill 已有的反模板化二稿仍是独立章节步骤，应用同一本书的有效写法，并保留作者原稿与事实边界。
+
+远端 Skill 获取也只保留来源登记、版本锁定、候选审阅和规则提炼这层语义；不迁移原项目的网络服务或运行时。GitHub 来源遵循 [remote-skill-sources.md](remote-skill-sources.md) 的显式确认流程。
 
 ## 集成前检查
 

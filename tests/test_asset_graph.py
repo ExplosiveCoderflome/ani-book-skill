@@ -57,6 +57,8 @@ class AssetGraphCliTests(unittest.TestCase):
         data.mkdir(parents=True)
         (self.workspace / "chapters/chapter-001").mkdir(parents=True)
         (self.workspace / "chapters/chapter-001/draft.md").write_text("# 第一章\n\n稳定正文。\n", encoding="utf-8")
+        (self.workspace / "chapters/chapter-001/plan.md").write_text("# 第一章计划\n核验资产约束。", encoding="utf-8")
+        (self.workspace / "novel-brief.md").write_text("# 简报\n调查故事。", encoding="utf-8")
         (self.workspace / "novel-state.yaml").write_text(
             yaml.safe_dump(
                 {

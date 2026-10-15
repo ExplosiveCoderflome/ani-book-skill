@@ -26,6 +26,7 @@
 <novel-workspace>/
 ├── novel-state.yaml
 ├── novel-brief.md
+├── writing-style.md                 # 可选：本书已确认的有效写法快照
 ├── story-bible.md
 ├── world-bible.md
 ├── characters/
@@ -37,6 +38,7 @@
 │   └── chapter-deltas/
 ├── cross-book-assets/                # 可选：导入资产的本书快照
 ├── production/
+│   ├── skill-sources.yaml           # 可选：显式登记的 GitHub 写法/去 AI Skill 来源
 │   ├── recovery.md
 │   ├── quality-debt.md
 │   ├── token-usage.jsonl
@@ -52,6 +54,8 @@
 采用“模块为权威源，章节为装配包”的布局：`characters/`、`world-bible.md` 与 `continuity/` 分别保存跨章节复用的角色、世界与连续性事实；`chapters/chapter-XXX/` 集中保存该章的合同、最小上下文、正文和审查。
 
 `context-package.md` 是为单章读取、写作和审查准备的约束装配包，不是新的事实仓库。它应列出必要约束、稳定 ID、来源路径和本章解释，不能复制完整角色档案、世界设定或账本，更不能与模块权威源形成第二份可编辑真相。长期事实变化时，先更新相应模块权威源，再重新生成或标记受影响章节的上下文包为 `stale`。
+
+可选的 `writing-style.md` 是本书已确认的表达合同；私有 `styles/<名称>.md` 可保存跨书复用的抽象写法卡。章节计划只记录规则 ID 和本章例外，上下文包回读本书快照，不复制来源样文。写法改变后重建未稳定章节的上下文和审校目标，保护已验收正文；详见 [写法资产与表达合同](style-engine.md)。
 
 跨书资产只在 schema-v3 工作区中通过 `continuity/data/asset-links.yaml` 建立链接；`cross-book-assets/` 是本书快照而非正文替代品。图谱命中只是候选，章节装配前必须回读相应 YAML/Markdown 权威源；见 [cross-book-asset-graph.md](cross-book-asset-graph.md)。
 
@@ -142,6 +146,10 @@ artifacts:
 
 新工作区使用 `schema_version: 3`。导演模式使用 `milestone_approval` 或用户明确委托的 `auto`；导演状态使用 `idle`、`running`、`waiting_approval`、`blocked`、`completed`。`approval` 使用 `required`、`approved`、`delegated`、`not_required`。
 
+章节审校在开始时记录 `review_inputs`：本章计划、上下文、有效写法及实际候选正文的相对路径与 SHA-256；完成时复核输入未变。`accepted` 自动保护实际采用的正文。连续性提交与稳定导出都要复核这份版本绑定。旧审校缺少绑定时重新审校，不能由迁移补造验收；修改上游产物使未保护的依赖产物失效。显式批准覆盖保护正文后，启动步骤先在 `production/revisions/<工件ID>/` 保存旧内容，再生成候选；旧验收不随批准继承。
+
+章节计划记录所属 `volume`。只有一个节奏板时可自动采用；多卷有歧义时使用 `start-step --volume N` 或明确的节奏板依赖。必需依赖即使尚未登记也必须报缺失；正文需要本章计划和上下文，后续章节需前章已提交。旧工作区的基线以已提交章号承接，不要求伪造历史差分。
+
 `opening_choices` 是 `novel_brief` 的语义门槛，只保存频道、发布形态、主要阅读回报及其确认状态。状态为 `pending` 时唯一下一步必须是 `collect_opening_choices`，且控制器必须拒绝启动 `novel_brief`。用户说“由你决定”时记录为 `delegated`；含既有稳定简报的旧工作区迁移时可记录 `legacy_migrated`，不得反向猜测原选择。
 
 `sha256` 记录最近一次已知文件内容。检测到用户修改时，先把该产物标记为 `source: user_edited` 和 `protected: true`，更新其指纹，再把依赖旧内容且未受保护的下游产物标为 `stale`。不得反向覆盖用户文件。
@@ -163,6 +171,7 @@ artifacts:
 
 - `novel-brief.md`：书级定位、读者频道倾向、阅读承诺、主角幻想、核心冲突、故事发动机、叙事与节奏偏好、篇幅预算、更新节奏和内容边界。它是后续世界、角色、卷规划和章节生产的书级约束来源。
 - `story-bible.md`：长期对立、成长路径、揭示梯度、关系主线和结局方向。
+- `writing-style.md`（可选）：本书已确认的正向表达规则、反模板化风险、来源、适用边界与修文权限；不能改写剧情或事实。
 - `world-bible.md`：会约束剧情的世界规则、势力、舞台、准入限制、代价和当前公共状态。每个可被章节调用的规则、势力或舞台都使用稳定 ID；正文和计划引用 ID，而不是凭模糊名称猜测。
 - `characters/*`：角色欲望、功能、关系、硬事实、可变状态，以及可用于正文识别的外貌与呈现信息。
 - `volumes/*`：卷职责、阶段回报、主要压力、转折、损失与卷末牵引。

@@ -483,8 +483,6 @@ def update_state_for_store(workspace: Path, store: dict[str, Any], index_status:
     state = read_yaml(path)
     if not isinstance(state, dict):
         raise ValueError("novel-state.yaml must be a mapping")
-    current_version = state.get("schema_version", 0)
-    state["schema_version"] = max(3, current_version if isinstance(current_version, int) else 0)
     continuity = state.setdefault("continuity", {})
     if not isinstance(continuity, dict):
         raise ValueError("novel-state.yaml continuity must be a mapping")
@@ -559,6 +557,8 @@ def migrate_workspace(workspace: Path, dry_run: bool = False) -> dict[str, Any]:
             raise ValueError("migration validation failed: " + "; ".join(errors))
         if dry_run:
             return {"dry_run": True, "last_committed_chapter": last_committed, "facts": len(data["facts"]), "payoffs": len(data["payoffs"]), "resources": len(data["resources"]), "characters": len(characters), "relationships": len(relationships)}
+        state_backup = state_path.with_name(f"novel-state.yaml.bak.{datetime.now():%Y%m%d-%H%M%S-%f}")
+        shutil.copy2(state_path, state_backup)
         paths["root"].parent.mkdir(parents=True, exist_ok=True)
         os.replace(staged_data, paths["root"])
         backups = backup_legacy_views(workspace)
@@ -567,7 +567,7 @@ def migrate_workspace(workspace: Path, dry_run: bool = False) -> dict[str, Any]:
         index_result = build_index(workspace, committed_store)
         create_checkpoint(workspace, last_committed, "migration-baseline", committed_store)
         update_state_for_store(workspace, committed_store, "current")
-        return {"last_committed_chapter": last_committed, "facts": len(data["facts"]), "payoffs": len(data["payoffs"]), "resources": len(data["resources"]), "characters": len(characters), "relationships": len(relationships), "legacy_backup": [str(path) for path in backups], **index_result}
+        return {"last_committed_chapter": last_committed, "facts": len(data["facts"]), "payoffs": len(data["payoffs"]), "resources": len(data["resources"]), "characters": len(characters), "relationships": len(relationships), "state_backup": str(state_backup), "legacy_backup": [str(path) for path in backups], **index_result}
     finally:
         if temporary_root.exists():
             shutil.rmtree(temporary_root)

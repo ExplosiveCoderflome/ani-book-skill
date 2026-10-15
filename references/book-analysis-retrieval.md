@@ -60,7 +60,7 @@ BookGraph 负责回答明确关系问题，例如人物怎样参与事件、事�
 
 - `chapter`、`scene`、`character`、`event`、`location`；
 - `faction`、`item`、`resource`、`world_rule`；
-- `promise`、`payoff`、`conflict`、`state_snapshot`、`pattern`。
+- `promise`、`payoff`、`conflict`、`state_snapshot`、`pattern`、`core_promise`、`stimulus_object`、`viewing_position`、`psychological_progression`、`return_attachment`。
 
 建议关系：
 

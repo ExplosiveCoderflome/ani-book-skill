@@ -121,6 +121,52 @@ def atomic_write_text(path: Path, content: str) -> None:
 def atomic_write_state(workspace: Path, state: dict[str, Any]) -> None:
     rendered = yaml.safe_dump(state, allow_unicode=True, sort_keys=False, width=120)
     atomic_write_text(state_path(workspace), rendered)
+    refresh_recovery(workspace, state)
+
+
+def recovery_snapshot(state: dict[str, Any]) -> str:
+    artifacts = state.get("artifacts", {})
+    director = state.get("director", {})
+    action = decide_next(state)
+    protected = [key for key, item in artifacts.items() if isinstance(item, dict) and item.get("protected")]
+    stale = [key for key, item in artifacts.items() if isinstance(item, dict) and item.get("status") == "stale"]
+    return "\n".join([
+        "<!-- novelctl:recovery:start -->", "## 当前状态（由 novel-state.yaml 生成）", "",
+        f"- 连续性已提交至：{state.get('continuity', {}).get('last_committed_chapter') or '无'}",
+        f"- 当前步骤：{director.get('current_step') or '无'}",
+        f"- 当前阻断：{director.get('stop_reason') or '无'}",
+        f"- 受保护资产：{', '.join(protected) or '无'}",
+        f"- stale 资产：{', '.join(stale) or '无'}",
+        f"- 下一步：{action['type']} / {action['target']}；{action['reason']}",
+        "<!-- novelctl:recovery:end -->",
+    ])
+
+
+def refresh_recovery(workspace: Path, state: dict[str, Any]) -> None:
+    path = workspace / "production/recovery.md"
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    snapshot = recovery_snapshot(state)
+    pattern = r"<!-- novelctl:recovery:start -->.*?<!-- novelctl:recovery:end -->"
+    if re.search(pattern, existing, re.S):
+        rendered = re.sub(pattern, lambda _: snapshot, existing, count=1, flags=re.S)
+    else:
+        template = Path(__file__).resolve().parents[1] / "assets/workspace-template/production/recovery.md"
+        notes = "" if existing.strip() == template.read_text(encoding="utf-8").strip() else existing.strip()
+        rendered = "# 生产恢复记录\n\n" + snapshot + "\n"
+        if notes:
+            rendered += "\n## 保留的人工记录（历史信息，以当前状态为准）\n\n" + notes + "\n"
+    atomic_write_text(path, rendered)
+
+
+def pending_confirmation(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if "待确认" in line and (line.startswith("#") or line.startswith("> 状态") or
+                                  (line.startswith("|") and "待确认" in line.rstrip("|").split("|")[-1])):
+            return True
+    return False
 
 
 def file_sha256(path: Path) -> str:
@@ -195,40 +241,44 @@ def infer_dependencies(key: str, artifacts: dict[str, Any]) -> list[str]:
         direct = ["novel_brief", "story_bible"]
     elif key == "volume_strategy":
         direct = ["novel_brief", "story_bible", "world_bible", "character_roster"]
-    elif re.match(r"^volume_\d+_skeleton$", key):
+    elif re.fullmatch(r"volume_\d+_skeleton", key):
         direct = ["volume_strategy"]
-    elif re.match(r"^volume_\d+_beat_sheet$", key):
-        volume = key.split("_beat_sheet")[0]
-        direct = [f"{volume}_skeleton"]
+    elif re.fullmatch(r"volume_\d+_beat_sheet", key):
+        direct = [key.replace("_beat_sheet", "_skeleton")]
     else:
-        match = re.match(r"^chapter_(\d+)_(plan|context|context_package|draft|humanized|humanized_draft|review|repair|delta)$", key)
+        match = re.fullmatch(r"chapter_(\d+)_(plan|context|context_package|draft|humanized|humanized_draft|review|repair|delta)", key)
         if match:
-            number = int(match.group(1))
-            kind = match.group(2)
+            number, kind = int(match[1]), match[2]
             prefix = f"chapter_{number:03d}"
             if kind == "plan":
-                direct = ["volume_01_beat_sheet"]
-                previous = f"chapter_{number - 1:03d}_delta"
-                if number > 1 and previous in artifacts:
-                    direct.append(previous)
+                existing = artifacts.get(key, {})
+                volume = existing.get("volume")
+                windows = [item for item in existing.get("depends_on", []) if re.fullmatch(r"volume_\d+_beat_sheet", item)]
+                if volume is not None:
+                    direct = [f"volume_{int(volume):02d}_beat_sheet"]
+                elif len(windows) == 1:
+                    direct = windows
+                else:
+                    available = [item for item in artifacts if re.fullmatch(r"volume_\d+_beat_sheet", item)]
+                    if len(available) > 1:
+                        raise ValueError("chapter volume is ambiguous; supply --volume or an explicit beat-sheet dependency")
+                    direct = available or ["volume_01_beat_sheet"]
             elif kind in {"context", "context_package"}:
                 direct = [f"{prefix}_plan"]
             elif kind == "draft":
-                direct = [f"{prefix}_plan"]
-                context_key = f"{prefix}_context"
-                if context_key in artifacts:
-                    direct.append(context_key)
+                direct = [f"{prefix}_plan", f"{prefix}_context"]
             elif kind in {"humanized", "humanized_draft"}:
                 direct = [f"{prefix}_draft"]
             elif kind == "review":
                 humanized = f"{prefix}_humanized"
-                direct = [humanized if humanized in artifacts else f"{prefix}_draft"]
+                direct = [f"{prefix}_plan", f"{prefix}_context", humanized if humanized in artifacts else f"{prefix}_draft"]
             elif kind == "repair":
                 direct = [f"{prefix}_review"]
             else:
-                repair = f"{prefix}_repair"
-                direct = [repair if repair in artifacts else f"{prefix}_review"]
-    return [item for item in direct if item in artifacts]
+                direct = [f"{prefix}_review"]
+            if kind in {"context", "context_package", "review"} and "writing_style" in artifacts:
+                direct.append("writing_style")
+    return direct
 
 
 def approval_for(step: str, mode: str, existing_ready: bool = False) -> str:
@@ -366,6 +416,10 @@ def next_chapter_action(state: dict[str, Any]) -> dict[str, Any]:
     decision = review.get("review_decision")
     if decision == "repair_required" and f"{prefix}_repair" not in artifacts:
         return make_next("produce_artifact", f"{prefix}_repair", f"第 {number} 章审校要求修复")
+    if decision == "repair_required":
+        return make_next("review_repaired_chapter", f"{prefix}_review", f"第 {number} 章修复后需重新验收")
+    if decision == "stop_for_replan":
+        return make_next("resolve_blocker", f"{prefix}_review", f"第 {number} 章需要批准重规划并重新审校", True)
     if decision not in {"accepted", "repair_required"}:
         return make_next("record_review_decision", f"{prefix}_review", f"第 {number} 章审校尚未给出验收结论")
     if f"{prefix}_delta" not in artifacts:
@@ -375,6 +429,9 @@ def next_chapter_action(state: dict[str, Any]) -> dict[str, Any]:
 
 def decide_next(state: dict[str, Any]) -> dict[str, Any]:
     director = state.get("director", {}) if isinstance(state.get("director"), dict) else {}
+    if director.get("status") == "blocked":
+        return make_next("resolve_blocker", str(director.get("current_target") or "director"),
+                         str(director.get("stop_reason") or "流程阻断尚未解除"), True)
     if director.get("status") == "waiting_approval":
         current = str(director.get("current_target") or "milestone")
         if current == "chapter_range" and director.get("stop_reason") == "requested_range_completed":
@@ -417,7 +474,8 @@ def command_init(args: argparse.Namespace) -> int:
         fingerprint = source.get("fingerprint") if isinstance(source, dict) else None
         if not isinstance(fingerprint, str) or not fingerprint.strip():
             raise ValueError("analysis source fingerprint is missing")
-        source_analysis = {"path": str(source_path), "fingerprint": fingerprint, "read_scope": args.read_scope, "branch_chapter": args.branch_chapter}
+        source_analysis = {"path": str(source_path), "fingerprint": fingerprint, "read_scope": args.read_scope, "branch_chapter": args.branch_chapter,
+                           "source_snapshot": analysis_snapshot(source_path, source_state)}
     if workspace.exists() and any(workspace.iterdir()):
         raise ValueError(f"workspace is not empty: {workspace}")
     workspace.mkdir(parents=True, exist_ok=True)
@@ -451,26 +509,27 @@ def migrate_artifacts(workspace: Path, state: dict[str, Any], mode: str) -> dict
 def command_migrate(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
-    if state.get("schema_version") == SCHEMA_VERSION:
+    director_defaults = {"mode": args.mode, "status": "idle", "run_id": None, "current_step": None,
+                         "current_target": None, "requested_range": None, "stop_reason": None}
+    complete_v3 = (isinstance(state.get("director"), dict) and director_defaults.keys() <= state["director"].keys()
+                   and isinstance(state.get("next_action"), dict)
+                   and (state.get("novel", {}).get("mode") == "fanfic" or isinstance(state.get("opening_choices"), dict))
+                   and all(isinstance(item, dict) and "approval" in item for item in state.get("artifacts", {}).values()))
+    if state.get("schema_version") == SCHEMA_VERSION and complete_v3:
         print(json.dumps({"migrated": False, "reason": "already_v3"}, ensure_ascii=False, indent=2))
         return 0
     original = state_path(workspace)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup = original.with_name(f"novel-state.yaml.bak.{stamp}")
-    shutil.copy2(original, backup)
-    mode = args.mode
+    if not args.dry_run:
+        shutil.copy2(original, backup)
+    mode = state.get("director", {}).get("mode", args.mode)
     state["schema_version"] = SCHEMA_VERSION
     state.setdefault("workspace", {"persistence_mode": "workspace", "promoted_from_preview": True})
     state.setdefault("novel", {"title": workspace.name, "mode": "original", "current_stage": "recovery"})
-    state["director"] = {
-        "mode": mode,
-        "status": "idle",
-        "run_id": None,
-        "current_step": None,
-        "current_target": None,
-        "requested_range": None,
-        "stop_reason": None,
-    }
+    director = state.setdefault("director", {})
+    for key, value in director_defaults.items():
+        director.setdefault(key, value)
     migrate_artifacts(workspace, state, mode)
     brief = state.get("artifacts", {}).get("novel_brief", {})
     state.setdefault(
@@ -486,7 +545,6 @@ def command_migrate(args: argparse.Namespace) -> int:
     state.setdefault("usage", {"ledger_path": "production/token-usage.jsonl", "summary_path": "production/token-summary.json", "exact_tokens": 0, "estimated_tokens": 0, "unavailable_events": 0})
     state["next_action"] = decide_next(state)
     if args.dry_run:
-        backup.unlink(missing_ok=True)
         print(yaml.safe_dump(state, allow_unicode=True, sort_keys=False, width=120), end="")
         return 0
     atomic_write_state(workspace, state)
@@ -497,6 +555,10 @@ def command_migrate(args: argparse.Namespace) -> int:
 def validation_report(workspace: Path, state: dict[str, Any]) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    try:
+        validate_fanfic_source(state)
+    except (ValueError, OSError, yaml.YAMLError) as exc:
+        errors.append(str(exc))
     if state.get("schema_version") not in SUPPORTED_READ_VERSIONS:
         errors.append("unsupported schema_version")
     if state.get("schema_version") == SCHEMA_VERSION:
@@ -541,6 +603,15 @@ def validation_report(workspace: Path, state: dict[str, Any]) -> tuple[list[str]
             elif status == "ready" and artifacts[dependency].get("status") != "ready":
                 warnings.append(f"ready artifact {key} depends on non-ready {dependency}")
         approval = artifact.get("approval")
+        if step_from_key(key) == "chapter_review" and status == "ready" and artifact.get("review_decision") == "accepted":
+            try:
+                target = chapter_target(int(re.fullmatch(r"chapter_(\d+)_review", key)[1]))
+                if artifact.get("review_inputs") != review_snapshot(workspace, state, target):
+                    errors.append(f"accepted review version is missing or outdated: {key}; review again")
+            except (ValueError, OSError) as exc:
+                errors.append(f"accepted review input invalid: {key}: {exc}")
+        if status == "ready" and approval in {"approved", "delegated"} and step_from_key(key) in MILESTONE_STEPS and pending_confirmation(path):
+            errors.append(f"confirmation conflict: {key} is approved but its document still has pending choices")
         if state.get("schema_version") == 3 and approval not in APPROVALS:
             errors.append(f"artifact {key} has invalid approval: {approval}")
     if state.get("schema_version") == SCHEMA_VERSION and state.get("next_action") != decide_next(state):
@@ -557,6 +628,12 @@ def validation_report(workspace: Path, state: dict[str, Any]) -> tuple[list[str]
         action = state.get("next_action")
         if not isinstance(action, dict) or not all(field in action for field in ("type", "target", "reason", "requires_approval")):
             errors.append("next_action must contain type, target, reason, and requires_approval")
+    recovery = workspace / "production/recovery.md"
+    if not recovery.is_file() or recovery_snapshot(state) not in recovery.read_text(encoding="utf-8"):
+        warnings.append("recovery snapshot is missing or outdated; run reconcile")
+    style = workspace / "writing-style.md"
+    if style.is_file() and "writing_style" not in artifacts:
+        warnings.append("writing-style.md is not tracked; run reconcile before chapter production")
     return errors, warnings
 
 
@@ -648,23 +725,46 @@ def command_reconcile(args: argparse.Namespace) -> int:
     state = read_state(workspace)
     require_v3(state)
     artifacts = state["artifacts"]
-    graph = reverse_dependencies(artifacts)
     changed: list[str] = []
     stale: list[str] = []
     protected_conflicts: list[str] = []
+    style = workspace / "writing-style.md"
+    if style.is_symlink():
+        raise ValueError("writing-style.md must be a local book snapshot")
+    if style.is_file() and "writing_style" not in artifacts:
+        artifacts["writing_style"] = {"path": "writing-style.md", "status": "ready", "source": "user_edited",
+                                      "protected": True, "depends_on": [], "sha256": None,
+                                      "approval": "not_required", "updated_at": now_utc()}
+    last = chapter_number(state.get("continuity", {}).get("last_committed_chapter")) or 0
+    accepted = {int(match[1]) for key, item in artifacts.items()
+                if (match := re.match(r"^chapter_(\d+)_review$", key))
+                and item.get("status") == "ready" and item.get("review_decision") == "accepted"}
+    if "writing_style" in artifacts:
+        for key, artifact in artifacts.items():
+            match = re.match(r"^chapter_(\d+)_(context|context_package|review)$", key)
+            if match and int(match[1]) > last and int(match[1]) not in accepted:
+                artifact["depends_on"] = list(dict.fromkeys([*(artifact.get("depends_on") or []), "writing_style"]))
+    graph = reverse_dependencies(artifacts)
     for key, artifact in artifacts.items():
         path = artifact_location(workspace, artifact)
         recorded = artifact.get("sha256")
-        if recorded and path.is_file():
-            current = file_sha256(path)
+        if (recorded or key == "writing_style"):
+            current = file_sha256(path) if path.is_file() else None
             if current != recorded:
                 artifact.update({"sha256": current, "source": "user_edited", "protected": True, "updated_at": now_utc()})
+                if current is None:
+                    artifact["status"] = "missing"
+                elif key == "writing_style":
+                    artifact["status"] = "ready"
                 changed.append(key)
                 for dependent in descendants(key, graph):
                     candidate = artifacts[dependent]
+                    match = re.match(r"^chapter_(\d+)_", dependent)
+                    if key == "writing_style" and match and (int(match[1]) <= last or int(match[1]) in accepted):
+                        continue
                     if candidate.get("protected"):
                         protected_conflicts.append(dependent)
-                    elif candidate.get("status") == "ready":
+                    elif candidate.get("status") in {"ready", "in_progress"}:
                         candidate["status"] = "stale"
                         stale.append(dependent)
     if protected_conflicts:
@@ -677,16 +777,169 @@ def command_reconcile(args: argparse.Namespace) -> int:
 
 def dependency_list(args: argparse.Namespace, key: str, artifacts: dict[str, Any]) -> list[str]:
     supplied = list(dict.fromkeys(args.depends_on or []))
-    return supplied if supplied else infer_dependencies(key, artifacts)
+    if args.step == "chapter_plan":
+        volume = getattr(args, "volume", None)
+        windows = [item for item in supplied if re.fullmatch(r"volume_\d+_beat_sheet", item)]
+        if volume is not None:
+            if volume < 1:
+                raise ValueError("--volume must be positive")
+            window = f"volume_{volume:02d}_beat_sheet"
+            if windows and windows != [window]:
+                raise ValueError("--volume conflicts with explicit beat-sheet dependency")
+            return list(dict.fromkeys([window, *supplied]))
+        if len(windows) == 1:
+            return supplied
+        if len(windows) > 1:
+            raise ValueError("a chapter plan must select one volume beat sheet")
+    return list(dict.fromkeys([*infer_dependencies(key, artifacts), *supplied]))
 
 
-def ensure_dependencies_ready(artifacts: dict[str, Any], dependencies: Iterable[str]) -> None:
+def ensure_dependencies_ready(artifacts: dict[str, Any], dependencies: Iterable[str], workspace: Path | None = None) -> None:
     for dependency in dependencies:
         artifact = artifacts.get(dependency)
         if not isinstance(artifact, dict) or artifact.get("status") != "ready":
             raise ValueError(f"dependency is not ready: {dependency}")
         if artifact.get("approval") == "required":
             raise ValueError(f"dependency awaits milestone approval: {dependency}")
+        if workspace is not None:
+            path = artifact_location(workspace, artifact)
+            if not path.is_file() or not artifact.get("sha256") or file_sha256(path) != artifact["sha256"]:
+                raise ValueError(f"dependency file missing or changed; reconcile first: {dependency}")
+
+
+def validate_chapter_progress(state: dict[str, Any], target: str, step: str) -> None:
+    number = chapter_number(target)
+    if number is None:
+        return
+    last = chapter_number(state.get("continuity", {}).get("last_committed_chapter")) or 0
+    if number > last + 1 or (step == "continuity_update" and number != last + 1):
+        raise ValueError(f"chapter sequence requires chapter_{last + 1:03d}; previous continuity is not committed")
+
+
+def review_snapshot(workspace: Path, state: dict[str, Any], target: str) -> dict[str, dict[str, str]]:
+    number = chapter_number(target)
+    prefix = f"chapter_{number:03d}"
+    artifacts = state["artifacts"]
+    prose = next((f"{prefix}_{kind}" for kind in ("repair", "humanized", "draft")
+                  if artifacts.get(f"{prefix}_{kind}", {}).get("status") == "ready"), None)
+    if prose is None:
+        raise ValueError("review requires ready prose")
+    keys = [f"{prefix}_plan", f"{prefix}_context", prose]
+    if "writing_style" in artifacts:
+        keys.append("writing_style")
+    ensure_dependencies_ready(artifacts, keys)
+    snapshot = {}
+    for key in keys:
+        item = artifacts[key]
+        path = artifact_location(workspace, item)
+        if not path.is_file() or not item.get("sha256") or file_sha256(path) != item["sha256"]:
+            raise ValueError(f"review input changed or fingerprint missing; reconcile first: {key}")
+        snapshot[key] = {"path": item["path"], "sha256": item["sha256"]}
+    return snapshot
+
+
+def invalidate_dependents(state: dict[str, Any], key: str, keep: Iterable[str] = ()) -> list[str]:
+    artifacts = state["artifacts"]
+    stale = []
+    for dependent in descendants(key, reverse_dependencies(artifacts)):
+        if dependent in keep:
+            continue
+        item = artifacts[dependent]
+        if item.get("status") in {"ready", "in_progress"} and not item.get("protected"):
+            item["status"] = "stale"
+            item.pop("review_decision", None)
+            stale.append(dependent)
+    # Review can consume a repaired candidate without a cyclic dependency edge.
+    match = re.fullmatch(r"chapter_(\d+)_repair", key)
+    if match:
+        review = artifacts.get(f"chapter_{int(match[1]):03d}_review")
+        if review:
+            review["status"] = "stale"
+            review.pop("review_decision", None)
+    return stale
+
+
+def validate_confirmation_labels(workspace: Path, artifacts: dict[str, Any], keys: Iterable[str]) -> None:
+    pending = list(keys)
+    visited: set[str] = set()
+    while pending:
+        key = pending.pop()
+        if key in visited:
+            continue
+        visited.add(key)
+        artifact = artifacts.get(key, {})
+        if step_from_key(key) in MILESTONE_STEPS and artifact.get("approval") in {"approved", "delegated"}:
+            if pending_confirmation(artifact_location(workspace, artifact)):
+                raise ValueError(f"confirmation conflict: dependency {key} still has pending choices")
+        pending.extend(artifact.get("depends_on") or [])
+
+
+def analysis_snapshot(root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    source = state.get("source", {})
+    snapshot = {key: source.get(key) for key in ("fingerprint", "scope", "coverage")}
+    paths = {name for name in ("analysis-lens.md", "overview.md", "coverage-map.md") if (root / name).is_file()}
+    paths.update(path.relative_to(root).as_posix() for path in (root / "notes").glob("*.md"))
+    artifacts = state.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        raise ValueError("analysis artifacts must be a mapping")
+    registered = {}
+    for item in artifacts.values():
+        if isinstance(item, dict) and isinstance(item.get("path"), str):
+            relative = item["path"]
+            if Path(relative).suffix == ".md" and relative.split("/")[0] not in {"source", "retrieval"}:
+                paths.add(relative)
+                registered[relative] = item.get("status")
+    snapshot["analysis_inputs"] = {}
+    for relative in sorted(paths):
+        path = root / safe_relative_path(relative)
+        if not path.resolve().is_relative_to(root.resolve()):
+            raise ValueError("analysis input escapes workspace")
+        if registered.get(relative) == "ready" and not path.is_file():
+            raise ValueError(f"ready analysis input is missing: {relative}")
+        snapshot["analysis_inputs"][relative] = {"sha256": file_sha256(analysis_reference.local_file(root, relative)) if path.is_file() else None,
+                                                  "status": registered.get(relative, "unregistered")}
+    return snapshot
+
+
+def validate_fanfic_source(state: dict[str, Any], refresh: bool = False) -> None:
+    if state.get("novel", {}).get("mode") != "fanfic":
+        return
+    binding = state.get("source_analysis")
+    if not isinstance(binding, dict) or not binding.get("path"):
+        raise ValueError("source_analysis path is missing")
+    source_state = yaml.safe_load((Path(binding["path"]) / "analysis-state.yaml").read_text(encoding="utf-8"))
+    source = source_state.get("source", {}) if isinstance(source_state, dict) else {}
+    if not isinstance(source, dict) or not source.get("fingerprint"):
+        raise ValueError("analysis source fingerprint is missing")
+    snapshot = analysis_snapshot(Path(binding["path"]), source_state)
+    if refresh:
+        binding.update({"fingerprint": source["fingerprint"], "source_snapshot": snapshot})
+    elif binding.get("source_snapshot") != snapshot:
+        raise ValueError("analysis source changed or snapshot missing; rebuild fanfic_handoff and confirm its scope")
+    lens = source_state.get("analysis_lens")
+    if isinstance(lens, dict) and lens.get("status") != "ready":
+        raise ValueError("analysis lens is not ready; confirm before fanfic production")
+
+
+def validate_continuity_preflight(workspace: Path, state: dict[str, Any], target: str) -> None:
+    review_key = artifact_key("chapter_review", target)
+    review = state.get("artifacts", {}).get(review_key, {})
+    if review.get("status") != "ready" or review.get("review_decision") != "accepted":
+        raise ValueError("continuity_update requires an accepted chapter review, including after repair or replan")
+    if review.get("review_inputs") != review_snapshot(workspace, state, target):
+        raise ValueError("accepted review does not match current prose or contract; review again")
+    if state.get("director", {}).get("status") == "blocked":
+        raise ValueError("resolve the director blocker before continuity_update")
+
+
+def validate_style_preflight(workspace: Path, state: dict[str, Any], require_registered: bool = False) -> None:
+    style = state.get("artifacts", {}).get("writing_style")
+    if require_registered and not style and (workspace / "writing-style.md").exists():
+        raise ValueError("writing-style.md is not tracked; run reconcile before production")
+    if style:
+        path = workspace / "writing-style.md"
+        if not path.is_file() or style.get("status") != "ready" or file_sha256(path) != style.get("sha256"):
+            raise ValueError("writing-style.md changed or is missing; run reconcile before production")
 
 
 def validate_chapter_asset_preflight(workspace: Path, target: str) -> None:
@@ -710,6 +963,14 @@ def command_start_step(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
     require_v3(state)
+    if state.get("director", {}).get("stop_reason") == "stop_for_replan":
+        raise ValueError("stop_for_replan requires approval of the blocked review before restarting")
+    if args.step in CHAPTER_STEPS:
+        validate_style_preflight(workspace, state, require_registered=True)
+    if args.step == "continuity_update":
+        validate_continuity_preflight(workspace, state, args.target)
+    if args.step != "fanfic_handoff":
+        validate_fanfic_source(state)
     if not SAFE_NAME.fullmatch(args.step):
         raise ValueError("step has invalid format")
     if args.step in {"context_package", "chapter_draft", "chapter_review"}:
@@ -722,15 +983,36 @@ def command_start_step(args: argparse.Namespace) -> int:
         if state.get("artifacts", {}).get("fanfic_handoff", {}).get("status") != "ready":
             raise ValueError("fanfic_handoff must be ready before novel brief or chapter production")
     key = artifact_key(args.step, args.target)
+    if args.step in CHAPTER_STEPS:
+        validate_chapter_progress(state, args.target, args.step)
     artifacts = state["artifacts"]
     existing = artifacts.get(key)
-    if isinstance(existing, dict) and existing.get("protected") and not existing.get("overwrite_approved"):
+    accepted_source = False
+    if args.step in {"chapter_draft", "humanization_revision", "chapter_repair"}:
+        prior_review = artifacts.get(artifact_key("chapter_review", args.target), {})
+        if prior_review.get("review_decision") == "accepted":
+            bound = prior_review.get("review_inputs", {})
+            accepted_source = key in bound or not bound
+    if isinstance(existing, dict) and (existing.get("protected") or accepted_source) and not existing.get("overwrite_approved"):
         raise ValueError(f"artifact is protected; approve overwrite first: {key}")
     dependencies = dependency_list(args, key, artifacts)
-    ensure_dependencies_ready(artifacts, dependencies)
+    ensure_dependencies_ready(artifacts, dependencies, workspace)
+    validate_confirmation_labels(workspace, artifacts, dependencies)
     relative = safe_relative_path(args.artifact)
     run_id = args.run_id or str(uuid.uuid4())
     entry = existing if isinstance(existing, dict) else {}
+    if args.step == "chapter_review":
+        entry["review_inputs"] = review_snapshot(workspace, state, args.target)
+    if args.step == "chapter_plan":
+        window = next(item for item in dependencies if re.fullmatch(r"volume_\d+_beat_sheet", item))
+        entry["volume"] = int(window.split("_")[1])
+    if existing and (existing.get("protected") or accepted_source) and existing.get("overwrite_approved"):
+        old_path = artifact_location(workspace, existing)
+        if old_path.is_file():
+            backup = workspace / "production/revisions" / key / (file_sha256(old_path) + old_path.suffix)
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            if not backup.exists():
+                shutil.copy2(old_path, backup)
     if args.step == "chapter_repair":
         attempts = int(entry.get("repair_attempts", 0)) + 1
         if attempts > 2:
@@ -822,12 +1104,23 @@ def command_finish_step(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
     require_v3(state)
+    if state.get("director", {}).get("stop_reason") == "stop_for_replan":
+        raise ValueError("stop_for_replan requires approval before finishing production")
+    if args.step in CHAPTER_STEPS:
+        validate_style_preflight(workspace, state, require_registered=True)
+    if args.step == "continuity_update":
+        validate_continuity_preflight(workspace, state, args.target)
+    validate_fanfic_source(state, refresh=args.step == "fanfic_handoff")
     if args.status == "ready" and args.step in CHAPTER_STEPS - {"continuity_update"}:
         validate_chapter_reference_preflight(workspace, args.target)
     key = artifact_key(args.step, args.target)
     artifact = state["artifacts"].get(key)
     if not isinstance(artifact, dict) or artifact.get("status") != "in_progress":
         raise ValueError(f"step is not in progress: {key}")
+    if args.step in CHAPTER_STEPS:
+        validate_chapter_progress(state, args.target, args.step)
+    ensure_dependencies_ready(state["artifacts"], artifact.get("depends_on") or [], workspace)
+    validate_confirmation_labels(workspace, state["artifacts"], artifact.get("depends_on") or [])
     relative = safe_relative_path(args.artifact)
     if artifact.get("path") != relative:
         raise ValueError("artifact path differs from start-step")
@@ -836,11 +1129,22 @@ def command_finish_step(args: argparse.Namespace) -> int:
         raise ValueError(f"usable artifact is missing or empty: {path}")
     if args.step == "chapter_review" and args.status == "ready" and args.review_decision is None:
         raise ValueError("chapter_review requires --review-decision")
+    if args.step == "chapter_review" and args.status == "ready" and artifact.get("review_inputs") != review_snapshot(workspace, state, args.target):
+        raise ValueError("review inputs changed during review; restart review")
+    if args.status == "ready" and args.step in MILESTONE_STEPS and artifact.get("approval") in {"approved", "delegated"} and pending_confirmation(path):
+        raise ValueError("confirmation conflict: resolve document pending choices before marking approved work ready")
     run_id = state["director"].get("run_id")
     record_usage(args, workspace, run_id)
-    artifact.update({"status": args.status, "sha256": file_sha256(path) if path.is_file() else None, "updated_at": now_utc()})
+    current_sha = file_sha256(path) if path.is_file() else None
+    if artifact.get("sha256") != current_sha:
+        invalidate_dependents(state, key, artifact.get("review_inputs", {}) if args.step == "chapter_review" else ())
+    artifact.update({"status": args.status, "sha256": current_sha, "updated_at": now_utc()})
     if args.step == "chapter_review" and args.review_decision is not None:
         artifact["review_decision"] = args.review_decision
+        if args.status == "ready" and args.review_decision == "accepted":
+            for input_key in artifact["review_inputs"]:
+                if step_from_key(input_key) in {"chapter_draft", "humanization_revision", "chapter_repair"}:
+                    state["artifacts"][input_key]["protected"] = True
     if args.status == "ready" and artifact.get("approval") == "required":
         state["director"].update({"status": "waiting_approval", "current_step": args.step, "current_target": key, "stop_reason": None})
     elif args.status == "blocked":
@@ -882,6 +1186,8 @@ def command_approve(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
     require_v3(state)
+    if state["director"].get("stop_reason") == "stop_for_replan" and args.target != state["director"].get("current_target"):
+        raise ValueError("approve the blocked review to authorize replan; other approvals cannot clear it")
     if args.target == "chapter_range":
         if args.range_start is None or args.range_end is None:
             raise ValueError("chapter_range approval requires --range-start and --range-end")
@@ -913,6 +1219,8 @@ def command_approve(args: argparse.Namespace) -> int:
     artifact = state["artifacts"].get(args.target)
     if not isinstance(artifact, dict):
         raise ValueError(f"unknown approval target: {args.target}")
+    if not args.overwrite and step_from_key(args.target) in MILESTONE_STEPS and pending_confirmation(artifact_location(workspace, artifact)):
+        raise ValueError("confirmation conflict: synchronize document choices with the author's decision before approval")
     artifact["approval"] = "delegated" if args.delegate else "approved"
     if args.overwrite:
         artifact["overwrite_approved"] = True
@@ -932,87 +1240,112 @@ def run_script(name: str, arguments: list[str]) -> int:
 def command_context(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
-    fanfic_context = ""
+    validate_confirmation_labels(workspace, state.get("artifacts", {}), ["novel_brief", "story_bible"])
+    validate_fanfic_source(state)
+    validate_style_preflight(workspace, state)
+    number = args.chapter
+    if number < 1 or args.max_chars < 1:
+        raise ValueError("chapter and context budget must be positive")
+    validate_chapter_progress(state, chapter_target(number), "context_package")
+    structured = (workspace / "continuity/data").is_dir()
+    sources: list[str] = []
+    parts = [f"# 第{number:03d}章上下文包"]
+
+    def append_file(relative: str, tail: bool = False, required: bool = True) -> bool:
+        path = workspace / relative
+        if not path.is_file():
+            return False
+        content = path.read_text(encoding="utf-8").strip()
+        if tail:
+            content = content[-3500:]
+        section = f"### `{relative}`\n{content}"
+        if len("\n\n".join(parts + [section])) + 1 > args.max_chars:
+            if required:
+                raise ValueError(f"context budget cannot fit required source {relative}; increase --max-chars")
+            return False
+        parts.append(section)
+        sources.append(relative)
+        return True
+
+    # These sources have the same priority with Markdown and structured stores.
+    plan = state.get("artifacts", {}).get(f"chapter_{number:03d}_plan", {})
+    plan_path = safe_relative_path(plan.get("path", f"chapters/chapter-{number:03d}/plan.md"))
+    if not append_file(plan_path):
+        raise ValueError("required chapter plan is missing")
+    if number > 1:
+        previous = f"chapter_{number - 1:03d}"
+        candidates = []
+        for kind in ("repair", "humanized", "draft"):
+            artifact = state.get("artifacts", {}).get(f"{previous}_{kind}", {})
+            if artifact.get("status") == "ready" and artifact.get("path"):
+                candidates.append(safe_relative_path(artifact["path"]))
+        candidates += [f"chapters/chapter-{number - 1:03d}/draft-humanized.md",
+                       f"chapters/chapter-{number - 1:03d}/draft.md"]
+        found_tail = False
+        for relative in dict.fromkeys(candidates):
+            if append_file(relative, tail=True):
+                found_tail = True
+                break
+        if not found_tail:
+            raise ValueError("required previous chapter prose is missing")
+    if not append_file("novel-brief.md"):
+        raise ValueError("required novel-brief.md is missing")
+    style_path = workspace / "writing-style.md"
+    if style_path.is_symlink():
+        raise ValueError("writing-style.md must be a local book snapshot")
+    if style_path.is_file():
+        style = style_path.read_text(encoding="utf-8").strip()
+        if not style or len(style) > 2200:
+            raise ValueError("writing-style.md must contain a concise, non-empty style contract (up to 2200 characters)")
+        append_file("writing-style.md")
     if state.get("novel", {}).get("mode") == "fanfic":
         handoff = state.get("artifacts", {}).get("fanfic_handoff", {})
         if handoff.get("status") != "ready":
             raise ValueError("fanfic_handoff must be ready before chapter context")
-        fanfic_context = artifact_location(workspace, handoff).read_text(encoding="utf-8").strip()
-    reference_selection = analysis_reference.selection_path(workspace, args.chapter)
-    reference_context = analysis_reference.render_context(workspace, args.chapter) if reference_selection.exists() or reference_selection.is_symlink() else ""
+        if not append_file(safe_relative_path(handoff["path"])):
+            raise ValueError("fanfic_handoff file is missing")
+    selection = analysis_reference.selection_path(workspace, number)
+    reference_context = ""
+    if selection.exists() or selection.is_symlink():
+        reference_context = analysis_reference.render_context(workspace, number)
+        sources.append(selection.relative_to(workspace).as_posix())
     if bool(args.asset_library) != bool(args.asset_selection):
         raise ValueError("--asset-library and --asset-selection must be used together")
-    asset_context = ""
-    asset_budget = 0
     if args.asset_library:
-        if not (workspace / "continuity" / "data").is_dir():
+        if not structured:
             raise ValueError("cross-book context requires a migrated structured continuity store")
         selection = workspace / safe_relative_path(args.asset_selection)
-        asset_budget = min(2500, args.max_chars * 35 // 100)
-        asset_context = asset_graph.render_selection_context(args.asset_library.resolve(), workspace, selection, asset_budget)
-    if (workspace / "continuity" / "data").is_dir():
+        parts.append(asset_graph.render_selection_context(args.asset_library.resolve(), workspace, selection,
+                                                         min(2500, args.max_chars * 35 // 100)).strip())
+        sources.append(safe_relative_path(args.asset_selection))
+    remaining = args.max_chars - len("\n\n".join(parts)) - 3
+    if remaining < 0:
+        raise ValueError("context budget is too small for required sources and selected references")
+    if structured:
         characters = {item.strip() for item in args.characters.split(",") if item.strip()}
-        handoff_budget = min(len(fanfic_context), (args.max_chars - asset_budget) // 3)
-        rendered = continuity_store.assemble_context(workspace, args.chapter, characters, args.max_chars - asset_budget - handoff_budget)
-        if fanfic_context:
-            rendered = rendered.rstrip() + "\n\n## 同人交接\n" + fanfic_context[:handoff_budget]
-        if asset_context:
-            rendered = rendered.rstrip() + "\n\n" + asset_context
-        if reference_context:
-            rendered = rendered.rstrip() + "\n\n" + reference_context
-        if args.output:
-            relative_output = safe_relative_path(args.output)
-            atomic_write_text(workspace / relative_output, rendered)
-            sources = ["continuity/data/*.yaml"] + (["fanfic-handoff.md"] if fanfic_context else []) + ([safe_relative_path(args.asset_selection)] if args.asset_selection else [])
-            if reference_context:
-                sources.append(reference_selection.relative_to(workspace).as_posix())
-            print(json.dumps({"written": relative_output, "sources": sources, "asset_budget": asset_budget}, ensure_ascii=False, indent=2))
-        else:
-            print(rendered, end="")
-        return 0
-    if args.asset_library:
-        raise ValueError("cross-book context requires a migrated structured continuity store")
-    number = args.chapter
-    selected: list[tuple[str, str]] = []
-    candidates = [
-        f"chapters/chapter-{number:03d}/plan.md",
-        "novel-brief.md",
-        "story-bible.md",
-        "world-bible.md",
-        "characters/character-roster.md",
-        "volumes/volume-01-beat-sheet.md",
-        "continuity/fact-ledger.md",
-        "continuity/payoff-ledger.md",
-        "continuity/resource-ledger.md",
-    ]
-    if fanfic_context:
-        candidates.insert(1, "fanfic-handoff.md")
-    if number > 1:
-        candidates.insert(1, f"chapters/chapter-{number - 1:03d}/draft-humanized.md")
-        candidates.insert(2, f"chapters/chapter-{number - 1:03d}/draft.md")
-    budget = args.max_chars
-    for relative in candidates:
-        path = workspace / relative
-        if not path.is_file():
-            continue
-        content = path.read_text(encoding="utf-8").strip()
-        if "draft" in path.name and len(content) > 3500:
-            content = content[-3500:]
-        remaining = budget - sum(len(value) for _, value in selected)
-        if remaining <= 0:
-            break
-        selected.append((relative, content[:remaining]))
-    output = [f"# 第{number:03d}章上下文包", "", "## 已选权威来源"]
-    for relative, content in selected:
-        output += [f"\n### `{relative}`", content]
-    output += ["", "## 裁剪说明", f"- 最大字符预算：{args.max_chars}", "- 未列出的文件因无关、重复、缺失或预算限制而省略。"]
-    rendered = "\n".join(output).strip() + "\n"
+        parts.append(continuity_store.assemble_context(workspace, number, characters, remaining).strip())
+        sources.append("continuity/data/*.yaml")
+    optional = ["story-bible.md", "world-bible.md", "characters/character-roster.md"]
+    artifacts = state.get("artifacts", {})
+    plan = artifacts.get(f"chapter_{number:03d}_plan", {})
+    windows = [artifacts[key]["path"] for key in plan.get("depends_on", [])
+               if key in artifacts and step_from_key(key) == "beat_sheet" and artifacts[key].get("path")]
+    optional += windows or ["volumes/volume-01-beat-sheet.md"]
+    if not structured:
+        optional += ["continuity/fact-ledger.md", "continuity/payoff-ledger.md", "continuity/resource-ledger.md"]
+    omitted = []
+    for relative in optional:
+        if not append_file(relative, required=False):
+            omitted.append(relative)
+    rendered = "\n\n".join(parts).strip() + "\n"
+    if len(rendered) > args.max_chars:
+        raise ValueError("context exceeds --max-chars; increase the budget for required sources")
     if reference_context:
         rendered += "\n" + reference_context
     if args.output:
-        relative_output = safe_relative_path(args.output)
-        atomic_write_text(workspace / relative_output, rendered)
-        print(json.dumps({"written": relative_output, "sources": [item[0] for item in selected] + ([reference_selection.relative_to(workspace).as_posix()] if reference_context else [])}, ensure_ascii=False, indent=2))
+        atomic_write_text(workspace / safe_relative_path(args.output), rendered)
+        print(json.dumps({"written": safe_relative_path(args.output), "sources": sources,
+                          "omitted_missing_or_over_budget": omitted}, ensure_ascii=False, indent=2))
     else:
         print(rendered, end="")
     return 0
@@ -1102,6 +1435,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_step_identity(start)
     start.add_argument("--artifact", required=True)
     start.add_argument("--depends-on", action="append", default=[])
+    start.add_argument("--volume", type=int, help="volume owning this chapter plan; required when ambiguous")
     start.add_argument("--run-id")
     start.add_argument("--range-start", type=int)
     start.add_argument("--range-end", type=int)

@@ -26,10 +26,13 @@ class AnalysisReferenceTests(unittest.TestCase):
         self.source = {"fingerprint": "sha256:" + "a" * 64, "scope": "第1-50章", "coverage": "sampled"}
         self.analysis_state = {"schema_version": 1, "source": self.source.copy(), "artifacts": {"note": {"path": "notes/segment-001.md", "status": "ready", "sha256": self.digest(self.note)}}}
         self.write(self.analysis / "analysis-state.yaml", self.analysis_state)
-        self.card = {"id": "PATTERN-001", "title": "主动验证", "status": "ready", "scope": "第1-2章", "problem": "揭示缺少行动", "mechanism": "让主角选择带来验证代价", "prerequisites": ["有可行动线索"], "payoff": "答案与压力", "failure_modes": ["没有代价"], "forbidden_elements": ["独特源作设定"], "evidence": [{"path": "notes/segment-001.md", "sha256": self.digest(self.note)}]}
+        self.card = {"id": "PATTERN-001", "title": "主动验证", "status": "ready", "scope": "第1-2章", "core_promise": "持续获得关系真相与失控风险", "stimulus_object": "被隐瞒的关系选择", "viewing_position": "主角主动核验并承担看见后的代价", "psychological_progression": "从好奇推进到羞耻与失去控制", "return_attachment": "核验后必须重新选择是否留在关系中", "problem": "揭示缺少行动", "mechanism": "让主角选择带来验证代价", "prerequisites": ["有可行动线索"], "payoff": "答案与压力", "failure_modes": ["没有代价"], "forbidden_elements": ["独特源作设定"], "evidence": [{"path": "notes/segment-001.md", "sha256": self.digest(self.note)}]}
         self.data = {"schema_version": 1, "source": self.source.copy(), "cards": [self.card]}
         self.call("novelctl.py", "init", str(self.novel), "--title", "原创作品")
         (self.novel / "novel-brief.md").write_text("# 本书定位\n必须保留原创约束。", encoding="utf-8")
+        plan = self.novel / "chapters/chapter-001/plan.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text("# 本章计划\n先核对证据，再选择行动。", encoding="utf-8")
         self.selection = {"schema_version": 1, "chapter": 1, "max_chars": 2200, "items": [{"analysis_workspace": str(self.analysis), "pattern_id": "PATTERN-001", "registry_sha256": "", "use_for": "推动本章主角目标", "adaptation": "主角承担公开证据的风险", "avoid": ["源作场景组合"], "success_check": "选择是否产生新代价"}]}
         self.refresh_registry()
 
@@ -69,6 +72,8 @@ class AnalysisReferenceTests(unittest.TestCase):
         self.assertIn("必须保留原创约束", content)
         self.assertIn("PATTERN-001", content)
         self.assertIn("主角承担公开证据的风险", content)
+        self.assertIn("持续获得关系真相与失控风险", content)
+        self.assertIn("主角主动核验并承担看见后的代价", content)
         self.assertIn("第1-2章", content)
         self.assertIn("选择是否产生新代价", content)
         self.assertNotIn("原始片段内容不应进入小说上下文", content)
@@ -139,6 +144,34 @@ class AnalysisReferenceTests(unittest.TestCase):
         self.refresh_registry()
         result = self.call("analysis_reference.py", "validate", str(self.novel), "--chapter", "1", check=False)
         self.assertIn("chapter mismatch", result.stderr)
+
+    def test_core_contract_is_required_for_mechanism_cards(self) -> None:
+        self.card.pop("core_promise")
+        self.refresh_registry()
+        result = self.call("analysis_reference.py", "inspect", str(self.analysis))
+        inspected = json.loads(result.stdout)
+        self.assertFalse(inspected["cards"][0]["usable"])
+        self.assertIn("core_promise", inspected["cards"][0]["error"])
+
+    def test_genre_specific_dimensions_are_optional(self) -> None:
+        for key in ("stimulus_object", "viewing_position", "psychological_progression", "return_attachment"):
+            self.card.pop(key)
+        self.refresh_registry()
+        self.call("analysis_reference.py", "validate", str(self.novel), "--chapter", "1")
+        context = self.call("analysis_reference.py", "context", str(self.novel), "--chapter", "1").stdout
+        self.assertIn("核心阅读承诺", context)
+        self.assertNotIn("回归/依恋", context)
+
+    def test_stale_registry_and_unconfirmed_lens_block_ready_cards(self) -> None:
+        self.analysis_state["artifacts"]["patterns"] = {"path": "pattern-cards.yaml", "status": "stale"}
+        self.write(self.analysis / "analysis-state.yaml", self.analysis_state)
+        result = self.call("analysis_reference.py", "validate", str(self.novel), "--chapter", "1", check=False)
+        self.assertIn("registry is not ready", result.stderr)
+        self.analysis_state["artifacts"]["patterns"]["status"] = "ready"
+        self.analysis_state["analysis_lens"] = {"status": "pending_confirm"}
+        self.write(self.analysis / "analysis-state.yaml", self.analysis_state)
+        result = self.call("novelctl.py", "context", str(self.novel), "--chapter", "1", check=False)
+        self.assertIn("lens is not ready", result.stderr)
 
 
 if __name__ == "__main__":

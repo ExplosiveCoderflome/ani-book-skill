@@ -25,7 +25,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, help="自定义输出 TXT 路径")
     parser.add_argument("--dry-run", action="store_true", help="只显示将要导出的章节")
-    parser.add_argument("--stable-only", action="store_true", help="仅导出状态中已提交连续性的稳定正文")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--stable-only", dest="stable_only", action="store_true", help="仅导出已提交且验收版本匹配的正文（默认）")
+    scope.add_argument("--include-drafts", dest="stable_only", action="store_false", help="明确包含未验收草稿")
+    parser.set_defaults(stable_only=True)
     return parser.parse_args()
 
 
@@ -58,6 +61,7 @@ def choose_draft(chapter_dir: Path, source: str) -> Path | None:
 
 
 def stable_export_projection(workspace: Path) -> tuple[set[int], set[str]]:
+    from novelctl import review_snapshot, step_from_key, chapter_number
     state_file = workspace / "novel-state.yaml"
     if not state_file.is_file():
         raise ValueError("稳定导出需要 novel-state.yaml")
@@ -67,15 +71,27 @@ def stable_export_projection(workspace: Path) -> tuple[set[int], set[str]]:
         raise ValueError("稳定导出需要有效的 artifacts 状态")
     stable_chapters: set[int] = set()
     ready_paths: set[str] = set()
+    last = chapter_number(state.get("continuity", {}).get("last_committed_chapter")) or 0
     for key, artifact in artifacts.items():
         if not isinstance(artifact, dict) or artifact.get("status") != "ready":
             continue
-        path = artifact.get("path")
-        if isinstance(path, str):
-            ready_paths.add(Path(path).as_posix())
         match = re.fullmatch(r"chapter_(\d+)_delta", str(key))
-        if match:
-            stable_chapters.add(int(match.group(1)))
+        if not match or int(match[1]) > last:
+            continue
+        number = int(match[1])
+        review = artifacts.get(f"chapter_{number:03d}_review", {})
+        if review.get("status") != "ready" or review.get("review_decision") != "accepted":
+            continue
+        try:
+            snapshot = review_snapshot(workspace, state, f"chapter_{number:03d}")
+        except (OSError, ValueError):
+            continue
+        if snapshot != review.get("review_inputs"):
+            continue
+        stable_chapters.add(number)
+        for input_key, item in snapshot.items():
+            if step_from_key(input_key) in {"chapter_draft", "humanization_revision", "chapter_repair"}:
+                ready_paths.add(Path(item["path"]).as_posix())
     return stable_chapters, ready_paths
 
 
@@ -104,7 +120,7 @@ def collect_chapters(args: argparse.Namespace) -> tuple[list[tuple[int, Path, st
     ready_paths: set[str] | None = None
     if args.stable_only:
         stable_chapters, ready_paths = stable_export_projection(args.workspace)
-    for chapter_dir in sorted(chapters_root.iterdir(), key=lambda item: item.name):
+    for chapter_dir in chapters_root.iterdir():
         if not chapter_dir.is_dir():
             continue
         match = CHAPTER_PATTERN.match(chapter_dir.name)
@@ -118,7 +134,11 @@ def collect_chapters(args: argparse.Namespace) -> tuple[list[tuple[int, Path, st
         if stable_chapters is not None and number not in stable_chapters:
             skipped.append(f"第{number:03d}章：连续性尚未稳定提交")
             continue
-        draft_file = choose_draft(chapter_dir, args.source)
+        if ready_paths is not None and args.source == "auto":
+            draft_file = next((args.workspace / path for path in sorted(ready_paths)
+                               if (args.workspace / path).parent == chapter_dir), None)
+        else:
+            draft_file = choose_draft(chapter_dir, args.source)
         if draft_file is None:
             skipped.append(f"第{number:03d}章：缺少所选正文来源")
             continue
@@ -131,7 +151,7 @@ def collect_chapters(args: argparse.Namespace) -> tuple[list[tuple[int, Path, st
             skipped.append(f"第{number:03d}章：正文为空")
             continue
         collected.append((number, draft_file, heading, body))
-    return collected, skipped
+    return sorted(collected, key=lambda item: item[0]), skipped
 
 
 def default_output(workspace: Path, title: str, chapters: list[tuple[int, Path, str, str]]) -> Path:
@@ -182,6 +202,9 @@ def run() -> int:
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     try:
         raise SystemExit(run())
     except ValueError as error:

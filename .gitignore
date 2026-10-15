@@ -17,6 +17,21 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local credentials, keys, and recovery copies.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.bak
+*.bak.*
+
 # Private author work: publish only explicitly curated, authorized examples.
 novels/**
 !novels/.gitkeep
@@ -28,6 +43,8 @@ trends/**
 # Private cross-book asset library. Publish or export assets explicitly.
 libraries/**
 !libraries/.gitkeep
+# Private reusable writing-style cards.
+styles/**
 **/continuity/graph/asset-graph-index.sqlite3
 
 # Generated exports

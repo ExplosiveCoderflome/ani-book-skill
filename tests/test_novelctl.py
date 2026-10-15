@@ -13,6 +13,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "novelctl.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+import novelctl as control
 
 
 class NovelCtlTests(unittest.TestCase):
@@ -61,6 +63,16 @@ class NovelCtlTests(unittest.TestCase):
     def digest(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def attach_review_inputs(self, state: dict) -> None:
+        for kind in ("plan", "context", "draft"):
+            relative = f"chapters/chapter-001/{kind}.md"
+            path = self.workspace / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# {kind}\n审校输入。", encoding="utf-8")
+            state["artifacts"][f"chapter_001_{kind}"] = {"path": relative, "status": "ready", "sha256": self.digest(path),
+                                                         "approval": "not_required", "depends_on": []}
+        state["artifacts"]["chapter_001_review"]["review_inputs"] = control.review_snapshot(self.workspace, state, "chapter_001")
+
     def test_init_status_next_and_validate(self) -> None:
         state = self.init_workspace(confirm_choices=False)
         self.assertEqual(3, state["schema_version"])
@@ -95,7 +107,7 @@ class NovelCtlTests(unittest.TestCase):
         checked = json.loads(self.run_cli("validate", str(self.workspace)).stdout)
         self.assertTrue(checked["valid"])
 
-    def test_fanfic_requires_handoff_before_novel_brief(self) -> None:
+    def prepare_fanfic_handoff(self) -> None:
         analysis = self.root / "analysis"
         analysis.mkdir()
         (analysis / "analysis-state.yaml").write_text(
@@ -126,7 +138,14 @@ class NovelCtlTests(unittest.TestCase):
             "--measurement", "unavailable", "--reason", "runtime_usage_not_exposed",
         )
         self.assertEqual("novel_brief", json.loads(self.run_cli("next", str(self.workspace)).stdout)["target"])
+        plan = self.workspace / "chapters/chapter-001/plan.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text("# 本章计划\n承接交接。", encoding="utf-8")
+        (self.workspace / "novel-brief.md").write_text("# 同人简报\n方向已确认。", encoding="utf-8")
         self.assertIn("fanfic-handoff.md", self.run_cli("context", str(self.workspace), "--chapter", "1").stdout)
+
+    def test_fanfic_requires_handoff_before_novel_brief(self) -> None:
+        self.prepare_fanfic_handoff()
 
     def test_finish_records_usage_before_ready_and_waits_for_approval(self) -> None:
         self.init_workspace()
@@ -321,6 +340,15 @@ class NovelCtlTests(unittest.TestCase):
             )
         self.write_state(state)
         relative = "continuity/chapter-deltas/chapter-001.md"
+        review_path = self.workspace / "chapters/chapter-001/review.md"
+        review_path.parent.mkdir(parents=True, exist_ok=True)
+        review_path.write_text("# 审校\n已验收。\n", encoding="utf-8")
+        state["artifacts"]["chapter_001_review"] = {
+            "path": "chapters/chapter-001/review.md", "status": "ready", "review_decision": "accepted",
+            "sha256": self.digest(review_path), "approval": "not_required", "depends_on": [],
+        }
+        self.attach_review_inputs(state)
+        self.write_state(state)
         self.run_cli(
             "start-step",
             str(self.workspace),
@@ -494,13 +522,135 @@ class NovelCtlTests(unittest.TestCase):
         self.assertEqual("resolve_blocker", state["next_action"]["type"])
         self.assertEqual("novel_brief", state["next_action"]["target"])
 
+    def test_replan_blocks_next_start_and_finish_until_review_accepts(self) -> None:
+        state = self.init_workspace(mode="auto")
+        path = self.workspace / "chapters/chapter-001/review.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("# 审校\n结构性冲突。", encoding="utf-8")
+        state["artifacts"]["chapter_001_review"] = {
+            "path": "chapters/chapter-001/review.md", "status": "in_progress",
+            "approval": "not_required", "depends_on": [],
+        }
+        self.attach_review_inputs(state)
+        self.write_state(state)
+        self.run_cli("finish-step", str(self.workspace), "--step", "chapter_review", "--target", "chapter_001",
+                     "--artifact", "chapters/chapter-001/review.md", "--review-decision", "stop_for_replan",
+                     "--measurement", "unavailable", "--reason", "runtime_usage_not_exposed")
+        action = json.loads(self.run_cli("next", str(self.workspace)).stdout)
+        self.assertEqual("resolve_blocker", action["type"])
+        self.assertTrue(action["requires_approval"])
+        before = (self.workspace / "novel-state.yaml").read_bytes()
+        for command in ("start-step", "finish-step"):
+            extra = ["--measurement", "unavailable", "--reason", "runtime_usage_not_exposed"] if command == "finish-step" else []
+            result = self.run_cli(command, str(self.workspace), "--step", "continuity_update", "--target", "chapter_001",
+                                  "--artifact", "continuity/chapter-deltas/chapter-001.md", *extra, check=False)
+            self.assertIn("stop_for_replan", result.stderr)
+        wrong = self.run_cli("approve", str(self.workspace), "--target", "novel_brief", check=False)
+        self.assertNotEqual(0, wrong.returncode)
+        self.assertEqual(before, (self.workspace / "novel-state.yaml").read_bytes())
+        self.run_cli("approve", str(self.workspace), "--target", "chapter_001_review")
+        still_blocked = self.run_cli("start-step", str(self.workspace), "--step", "continuity_update", "--target", "chapter_001",
+                                    "--artifact", "continuity/chapter-deltas/chapter-001.md", check=False)
+        self.assertIn("accepted chapter review", still_blocked.stderr)
+
+    def test_style_edit_invalidates_future_context_and_review_preserving_accepted_prose(self) -> None:
+        state = self.init_workspace(mode="auto")
+        style = self.workspace / "writing-style.md"
+        style.write_text("STYLE-01：对白保留分歧。", encoding="utf-8")
+        self.run_cli("reconcile", str(self.workspace))
+        state = self.read_state()
+        self.assertIn("writing_style", state["artifacts"])
+        state["continuity"]["last_committed_chapter"] = "chapter_001"
+        for chapter in (1, 2):
+            for kind in ("context", "draft", "review"):
+                key = f"chapter_{chapter:03d}_{kind}"
+                relative = f"chapters/chapter-{chapter:03d}/{kind}.md"
+                path = self.workspace / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"稳定内容 {key}", encoding="utf-8")
+                state["artifacts"][key] = {"path": relative, "status": "ready", "protected": chapter == 1,
+                                          "approval": "not_required", "sha256": self.digest(path),
+                                          "depends_on": [f"chapter_{chapter:03d}_context"] if kind == "draft" else []}
+        self.write_state(state)
+        stable = self.workspace / "chapters/chapter-001/draft.md"
+        before = stable.read_bytes()
+        style.write_text("STYLE-01：对白保留分歧。STYLE-02：取消旁白说教。", encoding="utf-8")
+        result = self.run_cli("context", str(self.workspace), "--chapter", "2", check=False)
+        self.assertIn("reconcile", result.stderr)
+        self.run_cli("reconcile", str(self.workspace))
+        after = self.read_state()
+        self.assertEqual(before, stable.read_bytes())
+        for kind in ("context", "draft", "review"):
+            self.assertEqual("ready", after["artifacts"][f"chapter_001_{kind}"]["status"])
+            self.assertEqual("stale", after["artifacts"][f"chapter_002_{kind}"]["status"])
+        self.assertNotEqual("blocked", after["director"]["status"])
+
+    def test_source_changes_block_fanfic_context_and_production(self) -> None:
+        self.prepare_fanfic_handoff()
+        source_path = self.root / "analysis/analysis-state.yaml"
+        for source in ({"fingerprint": "sha256:NEW"}, {"fingerprint": "sha256:TEST", "scope": "第1-4章"}):
+            source_path.write_text(yaml.safe_dump({"source": source}, allow_unicode=True), encoding="utf-8")
+            for command in (("context", "--chapter", "1"), ("validate",),
+                            ("start-step", "--step", "novel_brief", "--target", "novel_brief", "--artifact", "novel-brief.md")):
+                result = self.run_cli(command[0], str(self.workspace), *command[1:], check=False)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("analysis source changed", result.stdout + result.stderr)
+
+    def test_recovery_refresh_preserves_notes_and_flags_confirmation_conflicts(self) -> None:
+        state = self.init_workspace()
+        recovery = self.workspace / "production/recovery.md"
+        recovery.write_text(recovery.read_text(encoding="utf-8") + "\n作者备注：保留此前线索。\n", encoding="utf-8")
+        brief = self.workspace / "novel-brief.md"
+        brief.write_text("# 简报\n## 故事发动机（AI 推荐待确认）\n", encoding="utf-8")
+        state["artifacts"]["novel_brief"].update({"status": "ready", "approval": "approved", "sha256": self.digest(brief)})
+        self.write_state(state)
+        result = self.run_cli("validate", str(self.workspace), check=False)
+        self.assertIn("confirmation conflict", result.stdout)
+        rejected = self.run_cli("approve", str(self.workspace), "--target", "novel_brief", check=False)
+        self.assertIn("confirmation conflict", rejected.stderr)
+        state["artifacts"]["story_bible"]["status"] = "in_progress"
+        (self.workspace / "story-bible.md").write_text("# 故事圣经\n已生成候选。", encoding="utf-8")
+        self.write_state(state)
+        before = (self.workspace / "novel-state.yaml").read_bytes()
+        finish = self.run_cli("finish-step", str(self.workspace), "--step", "story_bible", "--target", "story_bible",
+                              "--artifact", "story-bible.md", "--measurement", "unavailable",
+                              "--reason", "runtime_usage_not_exposed", check=False)
+        self.assertIn("confirmation conflict", finish.stderr)
+        self.assertEqual(before, (self.workspace / "novel-state.yaml").read_bytes())
+        self.run_cli("reconcile", str(self.workspace))
+        self.assertIn("作者备注：保留此前线索。", recovery.read_text(encoding="utf-8"))
+        report = json.loads(self.run_cli("validate", str(self.workspace), check=False).stdout)
+        self.assertFalse(any("recovery" in item for item in report["warnings"]))
+        self.assertIn("待确认", brief.read_text(encoding="utf-8"))
+
+    def test_incomplete_v3_can_be_repaired_with_backup_and_readonly_dry_run(self) -> None:
+        self.init_workspace()
+        state = self.read_state()
+        state["director"] = {"mode": "auto"}
+        state.pop("opening_choices")
+        state.pop("next_action")
+        for artifact in state["artifacts"].values():
+            artifact.pop("approval")
+        self.write_state(state)
+        before = (self.workspace / "novel-state.yaml").read_bytes()
+        self.run_cli("migrate", str(self.workspace), "--dry-run")
+        self.assertEqual(before, (self.workspace / "novel-state.yaml").read_bytes())
+        self.assertEqual([], list(self.workspace.glob("novel-state.yaml.bak.*")))
+        self.run_cli("migrate", str(self.workspace))
+        self.assertEqual("auto", self.read_state()["director"]["mode"])
+        backups = list(self.workspace.glob("novel-state.yaml.bak.*"))
+        self.assertEqual(before, backups[0].read_bytes())
+        self.assertTrue(json.loads(self.run_cli("validate", str(self.workspace)).stdout)["valid"])
+
     def test_legacy_context_falls_back_to_selected_markdown(self) -> None:
         state = self.init_workspace(mode="auto")
         brief = self.workspace / "novel-brief.md"
         plan = self.workspace / "chapters/chapter-001/plan.md"
+        style = self.workspace / "writing-style.md"
         brief.write_text("# 简报\n阅读承诺。\n", encoding="utf-8")
         plan.parent.mkdir(parents=True, exist_ok=True)
         plan.write_text("# 第一章计划\n必须发生。\n", encoding="utf-8")
+        style.write_text("# 本书写法\nSTYLE-01：对白体现人物风险偏好。\n", encoding="utf-8")
         state["artifacts"]["novel_brief"].update(
             {"status": "ready", "approval": "delegated", "sha256": self.digest(brief)}
         )
@@ -508,6 +658,13 @@ class NovelCtlTests(unittest.TestCase):
         result = self.run_cli("context", str(self.workspace), "--chapter", "1")
         self.assertIn("第一章计划", result.stdout)
         self.assertIn("阅读承诺", result.stdout)
+        self.assertIn("STYLE-01：对白体现人物风险偏好", result.stdout)
+
+        too_long = "风" * 2201
+        style.write_text(too_long, encoding="utf-8")
+        rejected = self.run_cli("context", str(self.workspace), "--chapter", "1", check=False)
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertIn("writing-style.md", rejected.stderr)
 
 
 if __name__ == "__main__":
