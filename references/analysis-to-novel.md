@@ -82,7 +82,7 @@ items:
 
 ```text
 python scripts/analysis_reference.py validate novels/<名称> --chapter 1
-python scripts/novelctl.py context novels/<名称> --chapter 1 --output context-packages/chapter-001.md
+python scripts/novelctl.py context novels/<名称> --chapter 1 --output chapters/chapter-001/context-package.md
 ```
 
 `novelctl context` 自动读取对应章节的参考清单，兼容旧 Markdown 连续性与结构化连续性。参考部分默认额外最多 2200 字符，独立于已有权威上下文预算；可通过清单的 `max_chars` 显式调整。这是字符预算，不是模型 Token。超限会要求缩减选卡或压缩机制，不截掉前提、禁止元素和审校条件，也不为参考材料减少本书上下文预算。
@@ -91,4 +91,4 @@ python scripts/novelctl.py context novels/<名称> --chapter 1 --output context-
 
 审校中增加一个简短“参考机制效果”段落：机制 ID、实际采用位置、目标效果是否出现、前提是否满足、是否与本书约束冲突、是否存在过度相似或强塞痕迹。未采用的机制记明原因；不要仅凭列出来源就判定质量提升。审校结论仍走已有 `accepted/repair_required/stop_for_replan` 合同，参考结论不进入本书事实台账。
 
-阅读台只展示资料、核验机制及准备可复制请求。用户将请求交给 Codex 后，才按本书现有流程生成清单、上下文和正文；阅读页面不调用模型或写入工作区。
+使用时，告诉 Codex 要采用的机制卡、目标小说和章号。Codex 回读机制卡与本章计划，按上述流程生成清单、上下文和正文。

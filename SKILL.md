@@ -1,13 +1,21 @@
 ---
 name: produce-long-form-novel
-description: Produce, maintain, analyze, and export long-form Chinese novels through staged, editable artifacts, with progressive confirmation of high-impact creative settings for novice authors. Use when Codex needs to turn an idea into a novel plan, guide choices such as audience channel or genre, analyze public ranking metadata for hot genres, deconstruct an authorized reference novel or diagnose a manuscript, write fanfic from an authorized analysis workspace, design or revise volumes, generate chapter plans or prose, continue an existing novel, audit and repair chapters, export ready chapters as a TXT file, or decide the next production step from an existing Markdown/YAML workspace. Do not use for generic app development, database operations, unauthorized bulk copying, or unrelated short-form copywriting.
+description: Turn one sentence into a complete Chinese long-form novel, from the author's premise to editable chapters and a verified full-book TXT. Use for delegated whole-book writing, guided planning, serial drafting, resuming a novel, chapter review and repair, reference analysis, fanfic, or public genre-trend research.
 ---
 
 # Produce Long-Form Novel
 
 ## Mission
 
-Help a novice author move from a vague idea toward a complete long-form novel. Produce concrete, editable artifacts; preserve author decisions; and recommend one clear next step.
+An author can give one sentence and receive a complete novel. Preserve their premise, write actual scenes chapter by chapter, and deliver the reviewed manuscript as an ordered TXT.
+
+### From one sentence to a finished book
+
+- “把这个点子写成一部完整长篇，其他你定” is a production request. State the working title, reader promise, approximate length and save location briefly. Use workspace mode, preserve the original sentence with `novelctl.py init <workspace> --title <title> --idea <verbatim premise> --mode auto`, and record the delegated opening choices. Start producing in the same turn. If the author wants to choose the direction or approve milestones, use the guided route below.
+- Once the whole-book plan is accepted or delegated, record its last chapter with `set-ending <workspace> --chapter N`. For a fresh whole-book delegation, authorize chapters 1 through N with `approve <workspace> --target chapter_range --range-start 1 --range-end N`. Preserve any narrower scope the author sets. A planned ending and the current writing authorization can be changed independently.
+- Work through the chapter loop and volume transitions within that scope. After updating the ledgers at every tenth chapter or volume ending, run `checkpoint <workspace> --chapter chapter-NNN --reason ten-chapters` (use `volume-end` at a volume ending) while that chapter is still the latest commit. Continue writing within the agreed range. On interruption, resume from `next` and the committed manuscript.
+- For an explicit minimum length in Chinese characters, include `--min-body-han N` with `set-ending`. During the run use `status <workspace> --measure-length` to check the accepted prose against that commitment. Approximate lengths in a creative brief can stay flexible.
+- At `review_book`, follow the whole-book review in [chapter-production.md](references/chapter-production.md). Deliver the verified TXT, chapter count and a link to the editable workspace when `next` returns `book_complete`.
 
 ## Codex-Native Execution Boundary
 
@@ -225,6 +233,8 @@ After a complete draft, run one constrained Chinese-novel humanization pass by d
 
 After review, commit continuity only when the final prose is `accepted`, or is `continue_with_warning` and still safe to continue. In a migrated workspace, update and validate YAML first, then regenerate Markdown views and SQLite; in a legacy workspace, update the Markdown ledgers directly. Then update affected character assets, quality debt, recovery record, and state index. Do not commit planned events, local-patch candidates, rewrite-needed drafts, or replan-blocked drafts as facts.
 
+After revising a committed chapter, review the new prose and recommit its continuity delta before advancing. Keep the latest committed chapter number. A new production range requires explicit approval through `novelctl approve --target chapter_range` with its start and end.
+
 ## Manage Context and Continuity
 
 Read [context-and-continuity.md](references/context-and-continuity.md) when the request involves continuation, long-running consistency, character state, world rules, prior chapters, references, style, facts, resources, or payoffs.
@@ -237,7 +247,9 @@ Keep durable facts in their authoritative modules (`characters/`, `world-bible.m
 
 ## Export Ready Chapters
 
-When the user asks to merge, compile, or export generated chapters as a TXT file, run `scripts/novelctl.py export <workspace>` against the confirmed novel workspace. It exports only committed chapters whose accepted review still matches the prose and contract.
+For whole-book delivery, use `finish-book` as described above. For a collection or range of stable chapters, run `scripts/novelctl.py export <workspace>` against the confirmed novel workspace. It exports only committed chapters whose accepted review still matches the prose and contract.
+
+Each accepted review retains the style fingerprint recorded at review time. Later additions or edits to the book's style apply to subsequent reviews. Export still verifies the accepted chapter's plan, context and prose against their files.
 
 - Export only chapter prose. Never include plans or reviews.
 - Default to `--source auto`: use the actual accepted prose path, including an accepted repair. The standalone exporter also defaults to stable chapters; use its `--include-drafts` only when the user explicitly requests unaccepted drafts.

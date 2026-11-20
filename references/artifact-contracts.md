@@ -49,6 +49,8 @@
 
 章节目录使用稳定编号。每个章节目录至少包含 `plan.md`、`context-package.md`、`draft.md` 与 `review.md`，例如 `chapters/chapter-001/context-package.md`。卷文件使用 `volumes/volume-01.md`。不要依赖易变标题作为唯一文件名。
 
+已有作品按 `novel-state.yaml` 登记的章节上下文路径回读，包括旧布局 `context-packages/chapter-001.md`。修订这些章节时沿用原路径，以便核对审校记录中的版本。
+
 ### 章节装配与模块权威
 
 采用“模块为权威源，章节为装配包”的布局：`characters/`、`world-bible.md` 与 `continuity/` 分别保存跨章节复用的角色、世界与连续性事实；`chapters/chapter-XXX/` 集中保存该章的合同、最小上下文、正文和审查。

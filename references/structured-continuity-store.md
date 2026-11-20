@@ -27,3 +27,5 @@
 跨书复用、共享 IP 正史、同步冲突和图谱候选的完整合同见 [cross-book-asset-graph.md](cross-book-asset-graph.md)。只允许 schema-v3 工作区导入；同步状态绝不覆盖已验收正文。
 
 旧版工作区可继续使用 Markdown 台账；不要在未迁移工作区凭空创建部分 YAML 文件。
+
+新书默认也可以一直使用 Markdown。章末运行 `novelctl.py checkpoint <workspace> --chapter chapter-002 --reason volume-end`，章号取最后已提交章。命令把现有台账与该章已登记的差分保存到 `continuity/checkpoints/`，再次运行相同快照会返回原路径。已迁移工作区的检查点仍在 `continuity/data/checkpoints/`。

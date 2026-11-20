@@ -151,7 +151,7 @@ def read_records(workspace: Path) -> tuple[list[dict[str, Any]], list[str]]:
     return records, errors
 
 
-def command_record(args: argparse.Namespace) -> int:
+def append_record(args: argparse.Namespace) -> dict[str, Any]:
     workspace = args.workspace.resolve()
     if not workspace.is_dir():
         raise ValueError(f"workspace does not exist: {workspace}")
@@ -188,7 +188,11 @@ def command_record(args: argparse.Namespace) -> int:
         stream.write(serialized)
         stream.flush()
         os.fsync(stream.fileno())
-    print(json.dumps({"recorded": True, "ledger": str(path), "event": record}, ensure_ascii=False, indent=2))
+    return {"recorded": True, "ledger": str(path), "event": record}
+
+
+def command_record(args: argparse.Namespace) -> int:
+    print(json.dumps(append_record(args), ensure_ascii=False, indent=2))
     return 0
 
 

@@ -2,7 +2,7 @@
 
 # Ani Book Skill
 
-**Keep long-form fiction moving, from the first idea to accepted prose.**
+**Give it one sentence and write a whole Chinese novel.**
 
 Book planning · Reference analysis · Original adaptation · Fanfic · Style and humanization · Serial fiction
 
@@ -10,7 +10,7 @@ Book planning · Reference analysis · Original adaptation · Fanfic · Style an
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[Quick start](#quick-start) · [Novel pathway](#from-first-idea-to-a-finished-novel) · [Analysis pathway](#from-reference-analysis-to-writing) · [Style and humanization](#style-and-humanization) · [Local reader](#local-reader) · [Changelog](docs/releases/release-notes.md) · [中文](README.md)
+[Quick start](#quick-start) · [Novel pathway](#from-first-idea-to-a-finished-novel) · [Analysis pathway](#from-reference-analysis-to-writing) · [Style and humanization](#style-and-humanization) · [Changelog](docs/releases/release-notes.md) · [中文](README.md)
 
 </div>
 
@@ -72,7 +72,11 @@ flowchart TD
 
 **Completion means fulfilling the story's promises.** The main conflict and ending need a result, as do character and relationship changes. Outstanding promises should be paid off or deliberately left open by the author. Codex reviews closure using the existing artifacts, the author confirms it, and the exporter checks and combines stable chapters.
 
-Start with:
+**Delegate the whole book**
+
+> Use `$produce-long-form-novel` to write a complete Chinese novel about a bookbinder who hears the last sentence cut from every book. Choose the remaining details, write through the ending, and deliver the full TXT.
+
+The workspace preserves the original premise and the last accepted chapter across sessions. For a guided project, try the following request.
 
 > Use `$produce-long-form-novel`. My first idea is: … Guide me from opening to completion. Save a novel workspace, confirm key settings progressively, and work within the chapter ranges I approve. At the ending, review book closure and export TXT.
 
@@ -242,33 +246,13 @@ Preview an older workspace migration with `python scripts/novelctl.py migrate $b
 
 </details>
 
-## Local reader
-
-The optional **ANI Local Reader** presents novel and analysis files in a browser:
-
-- Bookshelf, document categories, and the full file tree.
-- Chinese full-text search, headings, font sizes, and light/dark themes.
-- Chapter navigation, source files, and fingerprints.
-- Analysis coverage, gaps, mechanism cards, and evidence status.
-- Copyable mechanism-integration requests for a target novel and chapter.
-
-With **Node.js 22.18+ and npm**, run this from the repository root:
-
-```powershell
-./apps/workspace-reader/start-local.ps1
-```
-
-Open the [local reader](http://127.0.0.1:8790). Pass `-Roots 'C:/writing', 'D:/research'` for workspaces elsewhere. The reader accesses only explicitly configured local roots. Creation, editing, and state maintenance stay with Codex and the original workspace.
-
-[Startup options, features, and limits](apps/workspace-reader/README.md)
-
 ## Files, privacy, and project scope
 
 ```text
 SKILL.md                 Codex workflow entry point
 references/              Planning, analysis, style, chapters, recovery, and asset contracts
 scripts/                 State, validation, retrieval, candidate checks, and export
-apps/workspace-reader/   Optional local read-only reader
+apps/workspace-reader/   Retired web reader prototype
 docs/                    Release history and bounded quality self-checks
 novels/                  Private novel workspaces
 analyses/                Private reference analysis, sources, and evidence
@@ -279,7 +263,7 @@ libraries/               Private cross-book assets and shared canon
 
 Manuscripts, source texts, research, and private asset directories are Git-ignored by default, with additional rules for environment files, keys, and backups. Authors can edit files directly; the workflow protects user edits and checks downstream invalidation. Token reporting distinguishes exact, estimated, and runtime-unavailable usage without presenting character counts as measured tokens.
 
-Codex is the sole engine for creative understanding, planning, generation, review, and judgment. Python provides deterministic tools, and the local reader is optional. The project draws on long-form production experience from [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant), organizing work through editable files and Skill contracts without requiring that project's frontend or backend services.
+Codex is the sole engine for creative understanding, planning, generation, review, and judgment. Python validates state, retrieves material, and exports chapters. Authors can read and edit manuscripts and reference analyses directly in their local workspaces. The project draws on long-form production experience from [AI-Novel-Writing-Assistant](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant).
 
 Chart research uses public metadata. Reference analysis uses authorized text and retains sources, scope, and evidence. Original work transfers abstract mechanisms; fanfic stays within the read scope. Humanization preserves facts, character goals, and author choices, with outcomes judged through prose and feedback.
 
@@ -287,10 +271,10 @@ Chart research uses public metadata. Reference analysis uses authorized text and
 
 ## Latest update
 
-### 2026-10-15
+### 2026-11-21
 
-- **Added:** Local content, size, and version checks for GitHub writing-style and humanization Skill candidates.
-- **Improved:** Core reader promises carry into writing, author corrections persist, selected directions proceed directly, and genre dimensions stay optional. A redesigned banner and Chinese and English pathways cover novel completion, reference analysis, and installation.
-- **Fixed:** Accepted-prose protection, review version binding, required inputs, volume selection, continuity recovery, and stable exports.
+- **Added**　Read the first 37 chapters of *书中末行* (82,171 Chinese characters of prose) and see a detector result for an excerpt. [Read the TXT](docs/examples/书中末行/书中末行-第1至37章.txt) · [View the screenshot](docs/examples/书中末行/AI检测截图.png)
+- **Improved**　Whole-book commissions can set a final chapter and a minimum Chinese character count from a one-sentence premise. Track accepted prose during drafting. The final check verifies each reviewed chapter and the total count before exporting the book.
+- **Fixed**　New payoff ledgers can be migrated directly. Midpoint and volume reviews now trace the consequences of character choices, earlier clues and when promised resources actually arrive.
 
 See the [changelog](docs/releases/release-notes.md) for the full history.

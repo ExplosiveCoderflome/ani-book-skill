@@ -60,7 +60,7 @@ Codex 根据章节计划、已导入资产和图谱候选，显式提出可编�
 
 ```powershell
 python scripts/asset_graph.py validate-selection libraries novels/<book> novels/<book>/context-packages/chapter-001.assets.yaml
-python scripts/novelctl.py context novels/<book> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output context-packages/chapter-001.md
+python scripts/novelctl.py context novels/<book> --chapter 1 --asset-library libraries --asset-selection context-packages/chapter-001.assets.yaml --output chapters/chapter-001/context-package.md
 ```
 
 `novelctl context` 总预算不变，其中跨书资产最多占 35%、且不超过 2500 字符。选中的 `sync` 链接出现 `conflict` 时，`context_package`、正文和审校不能开始；`update_available` 则继续固定使用本书快照，并在上下文中报告待处理更新。未选资产的冲突只在 `novelctl status` 的跨书资产统计中可见，不阻断章节。

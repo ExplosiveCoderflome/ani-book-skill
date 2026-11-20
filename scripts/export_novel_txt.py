@@ -61,7 +61,7 @@ def choose_draft(chapter_dir: Path, source: str) -> Path | None:
 
 
 def stable_export_projection(workspace: Path) -> tuple[set[int], set[str]]:
-    from novelctl import review_snapshot, step_from_key, chapter_number
+    from novelctl import accepted_review_inputs, step_from_key, chapter_number
     state_file = workspace / "novel-state.yaml"
     if not state_file.is_file():
         raise ValueError("稳定导出需要 novel-state.yaml")
@@ -83,10 +83,8 @@ def stable_export_projection(workspace: Path) -> tuple[set[int], set[str]]:
         if review.get("status") != "ready" or review.get("review_decision") != "accepted":
             continue
         try:
-            snapshot = review_snapshot(workspace, state, f"chapter_{number:03d}")
+            snapshot = accepted_review_inputs(workspace, state, f"chapter_{number:03d}")
         except (OSError, ValueError):
-            continue
-        if snapshot != review.get("review_inputs"):
             continue
         stable_chapters.add(number)
         for input_key, item in snapshot.items():
@@ -96,7 +94,7 @@ def stable_export_projection(workspace: Path) -> tuple[set[int], set[str]]:
 
 
 def chapter_content(chapter_number: int, draft_file: Path) -> tuple[str, str]:
-    content = draft_file.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+    content = draft_file.read_text(encoding="utf-8-sig").replace("\r\n", "\n").strip()
     heading_match = re.match(r"^#\s+(.+?)\s*\n+", content)
     if heading_match:
         return heading_match.group(1).strip(), content[heading_match.end() :].strip()

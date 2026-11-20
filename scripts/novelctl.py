@@ -21,6 +21,7 @@ import yaml
 
 import asset_graph
 import analysis_reference
+import book_completion
 import continuity_store
 import token_usage
 
@@ -96,6 +97,18 @@ def read_state(workspace: Path) -> dict[str, Any]:
     version = loaded.get("schema_version")
     if version not in SUPPORTED_READ_VERSIONS:
         raise ValueError(f"unsupported schema_version: {version}")
+    ending = loaded.get("novel", {}).get("final_chapter")
+    if ending is not None and (type(ending) is not int or ending < 1):
+        raise ValueError("novel.final_chapter must be a positive integer")
+    minimum = loaded.get("novel", {}).get("minimum_body_han")
+    if minimum is not None and (type(minimum) is not int or minimum < 1):
+        raise ValueError("novel.minimum_body_han must be a positive integer")
+    if loaded.get("novel", {}).get("completion") and not book_completion.current(workspace, loaded):
+        loaded["novel"].pop("completion")
+        if loaded["director"].get("status") == "completed":
+            loaded["director"]["status"] = "idle"
+            loaded["novel"]["current_stage"] = "book_review"
+        loaded["next_action"] = decide_next(loaded)
     return loaded
 
 
@@ -394,13 +407,50 @@ def ordered_artifacts(state: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]
     )
 
 
+def request_chapter_range() -> dict[str, Any]:
+    return make_next("request_chapter_range", "chapter_range", "已完成授权章节范围，需要用户指定下一范围", True)
+
+
+def pending_committed_delta(state: dict[str, Any], last: int) -> int | None:
+    chapters = (int(match[1]) for key, item in state.get("artifacts", {}).items()
+                if isinstance(item, dict) and item.get("status") != "ready"
+                and (match := re.fullmatch(r"chapter_(\d+)_delta", key)))
+    return min((number for number in chapters if number <= last), default=None)
+
+
+def review_followup(artifacts: dict, number: int) -> dict[str, Any] | None:
+    prefix = chapter_target(number)
+    key = f"{prefix}_review"
+    review = artifacts[key]
+    decision = review.get("review_decision")
+    if decision == "accepted":
+        return None
+    if decision == "stop_for_replan":
+        return make_next("resolve_blocker", key, f"第 {number} 章需要批准重规划并重新审校", True)
+    if decision != "repair_required":
+        return make_next("record_review_decision", key, f"第 {number} 章审校尚未给出验收结论")
+    repair_key = f"{prefix}_repair"
+    repair = artifacts.get(repair_key, {})
+    if repair.get("status") == "ready" and repair_key not in review.get("review_inputs", {}):
+        return make_next("review_repaired_chapter", key, f"第 {number} 章修复后需重新验收")
+    if repair.get("repair_attempts", 0) >= 2:
+        return make_next("resolve_blocker", key, f"第 {number} 章两轮修复仍未通过，需要重新规划", True)
+    if repair.get("protected") and not repair.get("overwrite_approved"):
+        return make_next("approve_milestone", repair_key, f"第 {number} 章定稿修订需要覆盖授权", True)
+    return make_next("produce_artifact", repair_key, f"第 {number} 章审校要求修复")
+
+
 def next_chapter_action(state: dict[str, Any]) -> dict[str, Any]:
     artifacts = state.get("artifacts", {})
     last = state.get("continuity", {}).get("last_committed_chapter") if isinstance(state.get("continuity"), dict) else None
     number = (chapter_number(last) or 0) + 1
+    if state.get("novel", {}).get("final_chapter") == number - 1:
+        if state["novel"].get("completion"):
+            return make_next("book_complete", state["novel"]["completion"]["path"], "全书已验收并导出")
+        return make_next("review_book", "book_review", "终章已提交，核对全书收束并导出完整正文")
     requested = state.get("director", {}).get("requested_range") if isinstance(state.get("director"), dict) else None
-    if isinstance(requested, dict):
-        number = max(number, int(requested.get("start", number)))
+    if requested and not requested["start"] <= number <= requested["end"]:
+        return request_chapter_range()
     prefix = f"chapter_{number:03d}"
     chain = (
         (f"{prefix}_plan", "chapter_plan"),
@@ -412,16 +462,9 @@ def next_chapter_action(state: dict[str, Any]) -> dict[str, Any]:
     for key, step in chain:
         if key not in artifacts:
             return make_next("produce_artifact", key, f"第 {number} 章下一生产步骤：{step}")
-    review = artifacts[f"{prefix}_review"]
-    decision = review.get("review_decision")
-    if decision == "repair_required" and f"{prefix}_repair" not in artifacts:
-        return make_next("produce_artifact", f"{prefix}_repair", f"第 {number} 章审校要求修复")
-    if decision == "repair_required":
-        return make_next("review_repaired_chapter", f"{prefix}_review", f"第 {number} 章修复后需重新验收")
-    if decision == "stop_for_replan":
-        return make_next("resolve_blocker", f"{prefix}_review", f"第 {number} 章需要批准重规划并重新审校", True)
-    if decision not in {"accepted", "repair_required"}:
-        return make_next("record_review_decision", f"{prefix}_review", f"第 {number} 章审校尚未给出验收结论")
+    action = review_followup(artifacts, number)
+    if action:
+        return action
     if f"{prefix}_delta" not in artifacts:
         return make_next("produce_artifact", f"{prefix}_delta", f"第 {number} 章可提交连续性差分")
     return make_next("resume_step", f"{prefix}_delta", f"第 {number} 章连续性尚未完成提交")
@@ -429,19 +472,40 @@ def next_chapter_action(state: dict[str, Any]) -> dict[str, Any]:
 
 def decide_next(state: dict[str, Any]) -> dict[str, Any]:
     director = state.get("director", {}) if isinstance(state.get("director"), dict) else {}
+    last = chapter_number(state.get("continuity", {}).get("last_committed_chapter")) or 0
+    final_chapter = state.get("novel", {}).get("final_chapter")
     if director.get("status") == "blocked":
         return make_next("resolve_blocker", str(director.get("current_target") or "director"),
                          str(director.get("stop_reason") or "流程阻断尚未解除"), True)
     if director.get("status") == "waiting_approval":
         current = str(director.get("current_target") or "milestone")
-        if current == "chapter_range" and director.get("stop_reason") == "requested_range_completed":
-            return make_next("request_chapter_range", current, "已完成授权章节范围，需要用户指定下一范围", True)
-        return make_next("approve_milestone", current, "当前里程碑需要用户批准", True)
+        if current != "chapter_range" or director.get("stop_reason") != "requested_range_completed":
+            return make_next("approve_milestone", current, "当前里程碑需要用户批准", True)
+        if final_chapter != last:
+            return request_chapter_range()
     if state.get("novel", {}).get("mode") != "fanfic" and not opening_choices_ready(state):
         return make_next("collect_opening_choices", "opening_choices", "开书前需确认频道、发布形态和主要阅读回报", True)
+    pending = pending_committed_delta(state, last)
+    requested = director.get("requested_range")
+    if pending and requested and not requested["start"] <= pending <= requested["end"]:
+        return make_next("request_chapter_range", "chapter_range", f"第 {pending} 章连续性待重新提交，需要批准该章范围", True)
     for desired, action in (("in_progress", "resume_step"), ("blocked", "resolve_blocker"), ("stale", "refresh_artifact"), ("missing", "produce_artifact")):
         for key, artifact in ordered_artifacts(state):
             if artifact.get("status") == desired:
+                chapter = re.fullmatch(r"chapter_(\d+)_.+", key)
+                if chapter and final_chapter and int(chapter[1]) > final_chapter:
+                    continue
+                if chapter and pending and int(chapter[1]) > last:
+                    continue
+                if chapter and requested and not requested["start"] <= int(chapter[1]) <= requested["end"]:
+                    continue
+                if chapter and step_from_key(key) == "continuity_update":
+                    number = int(chapter[1])
+                    review = state["artifacts"].get(f"{chapter_target(number)}_review", {})
+                    if review.get("status") == "ready":
+                        followup = review_followup(state["artifacts"], number)
+                        if followup:
+                            return followup
                 return make_next(action, key, f"首个 {desired} 产物：{key}", desired == "blocked")
     return next_chapter_action(state)
 
@@ -461,6 +525,8 @@ def ensure_workspace_directories(workspace: Path) -> None:
 
 def command_init(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
+    if args.idea is not None and not args.idea.strip():
+        raise ValueError("--idea must contain the author's premise")
     source_analysis = None
     if args.novel_mode == "fanfic":
         if not all((args.source_analysis, args.fanfic_mode, args.read_scope, args.branch_chapter)):
@@ -480,11 +546,16 @@ def command_init(args: argparse.Namespace) -> int:
         raise ValueError(f"workspace is not empty: {workspace}")
     workspace.mkdir(parents=True, exist_ok=True)
     ensure_workspace_directories(workspace)
+    for name, headers in continuity_store.LEDGER_HEADERS.items():
+        atomic_write_text(workspace / "continuity" / name, continuity_store.markdown_table(headers, []))
     template = Path(__file__).resolve().parents[1] / "assets" / "workspace-template" / "production"
     for name in ("recovery.md", "quality-debt.md"):
         shutil.copy2(template / name, workspace / "production" / name)
     (workspace / "production" / "token-usage.jsonl").touch(exist_ok=True)
-    atomic_write_state(workspace, initial_state(args.title, args.mode, args.novel_mode, source_analysis, args.fanfic_mode))
+    state = initial_state(args.title, args.mode, args.novel_mode, source_analysis, args.fanfic_mode)
+    if args.idea is not None:
+        state["novel"]["idea"] = args.idea
+    atomic_write_state(workspace, state)
     print(json.dumps({"created": str(workspace), "schema_version": SCHEMA_VERSION, "mode": args.mode}, ensure_ascii=False, indent=2))
     return 0
 
@@ -606,8 +677,7 @@ def validation_report(workspace: Path, state: dict[str, Any]) -> tuple[list[str]
         if step_from_key(key) == "chapter_review" and status == "ready" and artifact.get("review_decision") == "accepted":
             try:
                 target = chapter_target(int(re.fullmatch(r"chapter_(\d+)_review", key)[1]))
-                if artifact.get("review_inputs") != review_snapshot(workspace, state, target):
-                    errors.append(f"accepted review version is missing or outdated: {key}; review again")
+                accepted_review_inputs(workspace, state, target)
             except (ValueError, OSError) as exc:
                 errors.append(f"accepted review input invalid: {key}: {exc}")
         if status == "ready" and approval in {"approved", "delegated"} and step_from_key(key) in MILESTONE_STEPS and pending_confirmation(path):
@@ -669,6 +739,8 @@ def command_status(args: argparse.Namespace) -> int:
             cross_book_assets["invalid"] = 1
     result = {
         "title": state.get("novel", {}).get("title"),
+        "idea": state.get("novel", {}).get("idea"),
+        "final_chapter": state.get("novel", {}).get("final_chapter"),
         "schema_version": state.get("schema_version"),
         "director": state.get("director"),
         "artifact_counts": counts,
@@ -678,10 +750,21 @@ def command_status(args: argparse.Namespace) -> int:
         "usage": state.get("usage"),
         "next_action": decide_next(state),
     }
+    if args.measure_length:
+        require_v3(state)
+        result["length"] = book_completion.length_progress(workspace, state)
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"# {result['title']}\n")
+        if result["idea"]:
+            print(f"- 作者原句：{result['idea']}")
+        if result["final_chapter"]:
+            print(f"- 预定终章：第{result['final_chapter']}章")
+        if args.measure_length:
+            print(f"- 已提交正文汉字：{result['length']['body_han']}")
+            if result["length"]["minimum_body_han"]:
+                print(f"- 距最低篇幅尚差：{result['length']['remaining_body_han']} 字")
         print(f"- Schema：{result['schema_version']}")
         print(f"- 导演状态：{(result['director'] or {}).get('status', 'legacy')}")
         print(f"- 最后连续性章节：{(result['continuity'] or {}).get('last_committed_chapter') or '无'}")
@@ -705,6 +788,12 @@ def reverse_dependencies(artifacts: dict[str, Any]) -> dict[str, set[str]]:
         if isinstance(artifact, dict):
             for dependency in artifact.get("depends_on", []) or []:
                 result.setdefault(dependency, set()).add(key)
+            # A repair consumes the review, then the next review consumes the repair.
+            match = re.fullmatch(r"chapter_(\d+)_repair", key)
+            if match:
+                review_key = f"chapter_{int(match[1]):03d}_review"
+                if review_key in artifacts:
+                    result[key].add(review_key)
     return result
 
 
@@ -713,7 +802,7 @@ def descendants(start: str, graph: dict[str, set[str]]) -> set[str]:
     pending = list(graph.get(start, set()))
     while pending:
         current = pending.pop()
-        if current in seen:
+        if current == start or current in seen:
             continue
         seen.add(current)
         pending.extend(graph.get(current, set()))
@@ -735,14 +824,10 @@ def command_reconcile(args: argparse.Namespace) -> int:
         artifacts["writing_style"] = {"path": "writing-style.md", "status": "ready", "source": "user_edited",
                                       "protected": True, "depends_on": [], "sha256": None,
                                       "approval": "not_required", "updated_at": now_utc()}
-    last = chapter_number(state.get("continuity", {}).get("last_committed_chapter")) or 0
-    accepted = {int(match[1]) for key, item in artifacts.items()
-                if (match := re.match(r"^chapter_(\d+)_review$", key))
-                and item.get("status") == "ready" and item.get("review_decision") == "accepted"}
     if "writing_style" in artifacts:
         for key, artifact in artifacts.items():
             match = re.match(r"^chapter_(\d+)_(context|context_package|review)$", key)
-            if match and int(match[1]) > last and int(match[1]) not in accepted:
+            if match and not stable_chapter_artifact(state, key):
                 artifact["depends_on"] = list(dict.fromkeys([*(artifact.get("depends_on") or []), "writing_style"]))
     graph = reverse_dependencies(artifacts)
     for key, artifact in artifacts.items():
@@ -759,8 +844,7 @@ def command_reconcile(args: argparse.Namespace) -> int:
                 changed.append(key)
                 for dependent in descendants(key, graph):
                     candidate = artifacts[dependent]
-                    match = re.match(r"^chapter_(\d+)_", dependent)
-                    if key == "writing_style" and match and (int(match[1]) <= last or int(match[1]) in accepted):
+                    if step_from_key(key) in {"writing_style", "beat_sheet"} and stable_chapter_artifact(state, dependent):
                         continue
                     if candidate.get("protected"):
                         protected_conflicts.append(dependent)
@@ -811,12 +895,29 @@ def validate_chapter_progress(state: dict[str, Any], target: str, step: str) -> 
     number = chapter_number(target)
     if number is None:
         return
+    final_chapter = state.get("novel", {}).get("final_chapter")
+    if final_chapter is not None and number > final_chapter:
+        raise ValueError("chapter exceeds the declared ending; revise the ending first")
+    director = state.get("director", {})
+    requested = director.get("requested_range")
+    if director.get("stop_reason") == "requested_range_completed" or (
+        requested and not requested["start"] <= number <= requested["end"]
+    ):
+        raise ValueError("chapter is outside active production scope; approve a new chapter_range")
     last = chapter_number(state.get("continuity", {}).get("last_committed_chapter")) or 0
-    if number > last + 1 or (step == "continuity_update" and number != last + 1):
+    if number < 1 or number > last + 1:
         raise ValueError(f"chapter sequence requires chapter_{last + 1:03d}; previous continuity is not committed")
+    if number == last + 1:
+        pending = pending_committed_delta(state, last)
+        if pending is not None:
+            raise ValueError(f"recommit continuity for chapter_{pending:03d} before starting another chapter")
+    if step == "continuity_update" and number <= last:
+        delta = state["artifacts"].get(artifact_key(step, target), {})
+        if delta.get("status") not in {"stale", "missing", "blocked", "in_progress"}:
+            raise ValueError("historical continuity update requires an existing delta that needs repair")
 
 
-def review_snapshot(workspace: Path, state: dict[str, Any], target: str) -> dict[str, dict[str, str]]:
+def review_snapshot(workspace: Path, state: dict[str, Any], target: str, *, include_style: bool = True) -> dict[str, dict[str, str]]:
     number = chapter_number(target)
     prefix = f"chapter_{number:03d}"
     artifacts = state["artifacts"]
@@ -825,7 +926,7 @@ def review_snapshot(workspace: Path, state: dict[str, Any], target: str) -> dict
     if prose is None:
         raise ValueError("review requires ready prose")
     keys = [f"{prefix}_plan", f"{prefix}_context", prose]
-    if "writing_style" in artifacts:
+    if include_style and "writing_style" in artifacts:
         keys.append("writing_style")
     ensure_dependencies_ready(artifacts, keys)
     snapshot = {}
@@ -838,24 +939,46 @@ def review_snapshot(workspace: Path, state: dict[str, Any], target: str) -> dict
     return snapshot
 
 
+def accepted_review_inputs(workspace: Path, state: dict[str, Any], target: str) -> dict[str, dict[str, str]]:
+    review = state["artifacts"].get(artifact_key("chapter_review", target), {})
+    recorded = review.get("review_inputs")
+    if not isinstance(recorded, dict):
+        raise ValueError("accepted review inputs are missing; review again")
+    current = review_snapshot(workspace, state, target, include_style=False)
+    # The accepted style is historical. Later book-wide style changes apply to future reviews.
+    if "writing_style" in recorded or "writing_style" in (review.get("depends_on") or []):
+        style = recorded.get("writing_style")
+        if (not isinstance(style, dict) or style.get("path") != "writing-style.md"
+                or not re.fullmatch(r"[0-9a-f]{64}", str(style.get("sha256", "")))):
+            raise ValueError("accepted writing style fingerprint is missing or invalid; review again")
+        current["writing_style"] = style
+    if current != recorded:
+        raise ValueError("accepted review does not match current prose or contract; review again")
+    return recorded
+
+
+def stable_chapter_artifact(state: dict[str, Any], key: str) -> bool:
+    match = re.match(r"^(chapter_(\d+))_", key)
+    if not match:
+        return False
+    last = chapter_number(state["continuity"].get("last_committed_chapter")) or 0
+    review = state["artifacts"].get(f"{match[1]}_review", {})
+    return int(match[2]) <= last or (review.get("status") == "ready" and review.get("review_decision") == "accepted")
+
+
 def invalidate_dependents(state: dict[str, Any], key: str, keep: Iterable[str] = ()) -> list[str]:
     artifacts = state["artifacts"]
     stale = []
     for dependent in descendants(key, reverse_dependencies(artifacts)):
         if dependent in keep:
             continue
+        if step_from_key(key) in {"writing_style", "beat_sheet"} and stable_chapter_artifact(state, dependent):
+            continue
         item = artifacts[dependent]
         if item.get("status") in {"ready", "in_progress"} and not item.get("protected"):
             item["status"] = "stale"
             item.pop("review_decision", None)
             stale.append(dependent)
-    # Review can consume a repaired candidate without a cyclic dependency edge.
-    match = re.fullmatch(r"chapter_(\d+)_repair", key)
-    if match:
-        review = artifacts.get(f"chapter_{int(match[1]):03d}_review")
-        if review:
-            review["status"] = "stale"
-            review.pop("review_decision", None)
     return stale
 
 
@@ -926,8 +1049,7 @@ def validate_continuity_preflight(workspace: Path, state: dict[str, Any], target
     review = state.get("artifacts", {}).get(review_key, {})
     if review.get("status") != "ready" or review.get("review_decision") != "accepted":
         raise ValueError("continuity_update requires an accepted chapter review, including after repair or replan")
-    if review.get("review_inputs") != review_snapshot(workspace, state, target):
-        raise ValueError("accepted review does not match current prose or contract; review again")
+    accepted_review_inputs(workspace, state, target)
     if state.get("director", {}).get("status") == "blocked":
         raise ValueError("resolve the director blocker before continuity_update")
 
@@ -959,12 +1081,24 @@ def validate_chapter_reference_preflight(workspace: Path, target: str) -> None:
             analysis_reference.render_context(workspace, number)
 
 
+def chapter_range(start: int | None, end: int | None) -> dict[str, int]:
+    if start is None or end is None or not 1 <= start <= end:
+        raise ValueError("chapter range requires --range-start and --range-end with 1 <= start <= end")
+    return {"start": start, "end": end}
+
+
 def command_start_step(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     state = read_state(workspace)
     require_v3(state)
     if state.get("director", {}).get("stop_reason") == "stop_for_replan":
         raise ValueError("stop_for_replan requires approval of the blocked review before restarting")
+    if args.range_start is not None or args.range_end is not None:
+        requested = chapter_range(args.range_start, args.range_end)
+        previous = state["director"].get("requested_range")
+        if previous is not None and requested != previous:
+            raise ValueError("changing the active chapter_range requires approve --target chapter_range")
+        state["director"]["requested_range"] = requested
     if args.step in CHAPTER_STEPS:
         validate_style_preflight(workspace, state, require_registered=True)
     if args.step == "continuity_update":
@@ -1031,12 +1165,7 @@ def command_start_step(args: argparse.Namespace) -> int:
     })
     entry.pop("overwrite_approved", None)
     artifacts[key] = entry
-    requested = state["director"].get("requested_range")
-    if args.range_start is not None or args.range_end is not None:
-        if args.range_start is None or args.range_end is None or args.range_start > args.range_end:
-            raise ValueError("chapter range requires valid --range-start and --range-end")
-        requested = {"start": args.range_start, "end": args.range_end}
-    state["director"].update({"status": "running", "run_id": run_id, "current_step": args.step, "current_target": args.target, "requested_range": requested, "stop_reason": None})
+    state["director"].update({"status": "running", "run_id": run_id, "current_step": args.step, "current_target": args.target, "stop_reason": None})
     state["novel"]["current_stage"] = args.step
     state["next_action"] = decide_next(state)
     atomic_write_state(workspace, state)
@@ -1078,7 +1207,7 @@ def refresh_usage_projection(workspace: Path, state: dict[str, Any]) -> None:
     }
 
 
-def record_usage(args: argparse.Namespace, workspace: Path, run_id: str | None) -> None:
+def record_usage(args: argparse.Namespace, workspace: Path, run_id: str | None) -> dict[str, Any]:
     token_args = argparse.Namespace(
         workspace=workspace,
         route="novel",
@@ -1097,7 +1226,7 @@ def record_usage(args: argparse.Namespace, workspace: Path, run_id: str | None) 
         reasoning_tokens=args.reasoning_tokens,
         total_tokens=args.total_tokens,
     )
-    token_usage.command_record(token_args)
+    return token_usage.append_record(token_args)
 
 
 def command_finish_step(args: argparse.Namespace) -> int:
@@ -1134,9 +1263,10 @@ def command_finish_step(args: argparse.Namespace) -> int:
     if args.status == "ready" and args.step in MILESTONE_STEPS and artifact.get("approval") in {"approved", "delegated"} and pending_confirmation(path):
         raise ValueError("confirmation conflict: resolve document pending choices before marking approved work ready")
     run_id = state["director"].get("run_id")
-    record_usage(args, workspace, run_id)
+    usage = record_usage(args, workspace, run_id)
     current_sha = file_sha256(path) if path.is_file() else None
-    if artifact.get("sha256") != current_sha:
+    decision_changed = args.review_decision is not None and args.review_decision != artifact.get("review_decision")
+    if artifact.get("sha256") != current_sha or decision_changed:
         invalidate_dependents(state, key, artifact.get("review_inputs", {}) if args.step == "chapter_review" else ())
     artifact.update({"status": args.status, "sha256": current_sha, "updated_at": now_utc()})
     if args.step == "chapter_review" and args.review_decision is not None:
@@ -1155,14 +1285,19 @@ def command_finish_step(args: argparse.Namespace) -> int:
         state["director"].update({"status": "running", "current_step": None, "current_target": None, "stop_reason": None})
     number = chapter_number(args.target)
     if args.step == "continuity_update" and args.status == "ready" and number is not None:
-        state["continuity"]["last_committed_chapter"] = chapter_target(number)
+        last = chapter_number(state["continuity"].get("last_committed_chapter")) or 0
+        if number > last:
+            state["continuity"]["last_committed_chapter"] = chapter_target(number)
         requested = state["director"].get("requested_range")
-        if isinstance(requested, dict) and number >= int(requested.get("end", number + 1)):
+        if number == state["novel"].get("final_chapter"):
+            state["novel"]["current_stage"] = "book_review"
+        elif isinstance(requested, dict) and number >= int(requested.get("end", number + 1)):
             state["director"].update({"status": "waiting_approval", "current_step": None, "current_target": "chapter_range", "stop_reason": "requested_range_completed"})
     refresh_usage_projection(workspace, state)
     state["next_action"] = decide_next(state)
     atomic_write_state(workspace, state)
-    print(json.dumps({"finished": key, "status": args.status, "approval": artifact.get("approval"), "next_action": state["next_action"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({"finished": key, "status": args.status, "approval": artifact.get("approval"),
+                      "next_action": state["next_action"], "usage": usage}, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -1189,16 +1324,16 @@ def command_approve(args: argparse.Namespace) -> int:
     if state["director"].get("stop_reason") == "stop_for_replan" and args.target != state["director"].get("current_target"):
         raise ValueError("approve the blocked review to authorize replan; other approvals cannot clear it")
     if args.target == "chapter_range":
-        if args.range_start is None or args.range_end is None:
-            raise ValueError("chapter_range approval requires --range-start and --range-end")
-        if args.range_start < 1 or args.range_end < args.range_start:
-            raise ValueError("chapter range must satisfy 1 <= start <= end")
+        requested = chapter_range(args.range_start, args.range_end)
+        last = chapter_number(state["continuity"].get("last_committed_chapter")) or 0
+        if requested["start"] > last + 1:
+            raise ValueError(f"chapter sequence requires chapter_{last + 1:03d} before this range")
         state["director"].update(
             {
                 "status": "idle",
                 "current_step": None,
                 "current_target": None,
-                "requested_range": {"start": args.range_start, "end": args.range_end},
+                "requested_range": requested,
                 "stop_reason": None,
             }
         )
@@ -1249,6 +1384,7 @@ def command_context(args: argparse.Namespace) -> int:
     validate_chapter_progress(state, chapter_target(number), "context_package")
     structured = (workspace / "continuity/data").is_dir()
     sources: list[str] = []
+    selected_rows: dict[str, set[str]] = {}
     parts = [f"# 第{number:03d}章上下文包"]
 
     def append_file(relative: str, tail: bool = False, required: bool = True) -> bool:
@@ -1256,6 +1392,8 @@ def command_context(args: argparse.Namespace) -> int:
         if not path.is_file():
             return False
         content = path.read_text(encoding="utf-8").strip()
+        if relative in selected_rows:
+            content = "\n".join(line for line in content.splitlines() if line.strip() not in selected_rows[relative])
         if tail:
             content = content[-3500:]
         section = f"### `{relative}`\n{content}"
@@ -1323,8 +1461,19 @@ def command_context(args: argparse.Namespace) -> int:
         raise ValueError("context budget is too small for required sources and selected references")
     if structured:
         characters = {item.strip() for item in args.characters.split(",") if item.strip()}
-        parts.append(continuity_store.assemble_context(workspace, number, characters, remaining).strip())
+        parts.append(continuity_store.assemble_context(workspace, number, characters, remaining, args.require_id).strip())
         sources.append("continuity/data/*.yaml")
+    else:
+        rows = continuity_store.required_markdown_rows(workspace, number, args.require_id)
+        for relative, row in rows:
+            section = f"`{relative}`\n{row}"
+            if len(section) > remaining:
+                raise ValueError(f"context budget cannot fit required continuity row in {relative}; increase --max-chars")
+            parts.append(section)
+            remaining -= len(section) + 2
+            selected_rows.setdefault(relative, set()).add(row)
+            if relative not in sources:
+                sources.append(relative)
     optional = ["story-bible.md", "world-bible.md", "characters/character-roster.md"]
     artifacts = state.get("artifacts", {})
     plan = artifacts.get(f"chapter_{number:03d}_plan", {})
@@ -1375,6 +1524,56 @@ def command_export(args: argparse.Namespace) -> int:
     return run_script("export_novel_txt.py", forwarded)
 
 
+def command_set_ending(args: argparse.Namespace) -> int:
+    workspace = args.workspace.resolve()
+    state = read_state(workspace)
+    require_v3(state)
+    last = chapter_number(state["continuity"].get("last_committed_chapter")) or 0
+    if args.chapter < max(1, last):
+        raise ValueError("final chapter must be positive and include all committed chapters")
+    for key, item in state["artifacts"].items():
+        chapter = re.fullmatch(r"chapter_(\d+)_(draft|humanized|repair)", key)
+        if chapter and int(chapter[1]) > args.chapter and item.get("status") != "missing":
+            raise ValueError(f"final chapter would exclude existing prose: {key}")
+    novel = state["novel"]
+    minimum = args.min_body_han if args.min_body_han is not None else novel.get("minimum_body_han")
+    if minimum is not None and minimum < 1:
+        raise ValueError("--min-body-han must be positive")
+    if novel.get("final_chapter") != args.chapter or novel.get("minimum_body_han") != minimum:
+        novel["final_chapter"] = args.chapter
+        if minimum is not None:
+            novel["minimum_body_han"] = minimum
+        director = state["director"]
+        if novel.pop("completion", None) and director["status"] == "completed":
+            director["status"] = "idle"
+        if args.chapter == last and director.get("stop_reason") == "requested_range_completed":
+            director.update(status="idle", current_target=None, stop_reason=None)
+        if args.chapter == last and not director.get("current_step") and director["status"] != "blocked":
+            novel["current_stage"] = "book_review"
+        elif args.chapter > last and novel.get("current_stage") in {"book_review", "completed"}:
+            novel["current_stage"] = "chapter_plan"
+    state["next_action"] = decide_next(state)
+    atomic_write_state(workspace, state)
+    print(json.dumps({"final_chapter": args.chapter, "next_action": state["next_action"]}, ensure_ascii=False))
+    return 0
+
+
+def command_finish_book(args: argparse.Namespace) -> int:
+    workspace = args.workspace.resolve()
+    state = read_state(workspace)
+    require_v3(state)
+    if decide_next(state)["type"] not in {"review_book", "book_complete"}:
+        raise ValueError("resolve pending production steps and commit the declared ending before finishing")
+    result = book_completion.finish(workspace, state, args.reviewed_version)
+    if args.reviewed_version is not None:
+        state["novel"].update(current_stage="completed", completion=result)
+        state["director"].update(status="completed", current_step=None, current_target=None, stop_reason=None)
+        state["next_action"] = decide_next(state)
+        atomic_write_state(workspace, state)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def add_workspace(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("workspace", type=Path)
 
@@ -1392,6 +1591,7 @@ def build_parser() -> argparse.ArgumentParser:
     init = commands.add_parser("init", help="create a schema-v3 novel workspace")
     add_workspace(init)
     init.add_argument("--title", required=True)
+    init.add_argument("--idea", help="preserve the author's original one-sentence idea")
     init.add_argument("--mode", choices=sorted(DIRECTOR_MODES), default="milestone_approval")
     init.add_argument("--novel-mode", choices=("original", "fanfic"), default="original")
     init.add_argument("--source-analysis")
@@ -1409,6 +1609,7 @@ def build_parser() -> argparse.ArgumentParser:
     status = commands.add_parser("status", help="show the recoverable workspace projection")
     add_workspace(status)
     status.add_argument("--format", choices=("json", "markdown"), default="json")
+    status.add_argument("--measure-length", action="store_true", help="count Han characters in verified committed chapter bodies")
     status.set_defaults(handler=command_status)
 
     next_command = commands.add_parser("next", help="return the one deterministic next action")
@@ -1473,13 +1674,14 @@ def build_parser() -> argparse.ArgumentParser:
     add_workspace(context)
     context.add_argument("--chapter", type=int, required=True)
     context.add_argument("--characters", default="")
+    context.add_argument("--require-id", action="append", default=[], help="required local continuity ID, repeatable")
     context.add_argument("--max-chars", type=int, default=9000)
     context.add_argument("--output")
     context.add_argument("--asset-library", type=Path)
     context.add_argument("--asset-selection", help="workspace-relative context-packages/chapter-XXX.assets.yaml")
     context.set_defaults(handler=command_context)
 
-    checkpoint = commands.add_parser("checkpoint", help="create a structured continuity checkpoint")
+    checkpoint = commands.add_parser("checkpoint", help="snapshot the workspace's Markdown or structured continuity")
     add_workspace(checkpoint)
     checkpoint.add_argument("--chapter", required=True)
     checkpoint.add_argument("--reason", default="manual")
@@ -1499,6 +1701,17 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--output")
     export.add_argument("--dry-run", action="store_true")
     export.set_defaults(handler=command_export)
+    ending = commands.add_parser("set-ending", help="declare or revise the planned final chapter")
+    add_workspace(ending)
+    ending.add_argument("--chapter", type=int, required=True)
+    ending.add_argument("--min-body-han", type=int, help="hard minimum of Han characters in the complete accepted prose")
+    ending.set_defaults(handler=command_set_ending)
+    finish_book = commands.add_parser("finish-book", help="verify and deliver every chapter of a reviewed book")
+    add_workspace(finish_book)
+    operation = finish_book.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--check", action="store_true", help="check completeness and print the manuscript version")
+    operation.add_argument("--reviewed-version", help="deliver the exact manuscript reviewed by Codex and the author or delegate")
+    finish_book.set_defaults(handler=command_finish_book)
     return parser
 
 

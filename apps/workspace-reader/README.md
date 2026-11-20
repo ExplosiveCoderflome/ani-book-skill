@@ -1,6 +1,6 @@
 # ANI 本地阅读台
 
-可选的 React 阅读工具，承载 `analyses/` 拆书工作区和 `novels/` 小说工作区中的 Markdown。使用 React Router、Fumadocs UI/Core 和 `@fumadocs/local-md`；独立启动，不影响未安装阅读端的 Skill 使用。
+此 Web 原型已停止维护。当前小说创作与拆书流程见[项目首页](../../README.md)。以下说明保留原型的运行方式，供查阅历史实现。
 
 ## 启动
 

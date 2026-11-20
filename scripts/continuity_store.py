@@ -29,6 +29,11 @@ STORE_RELATIVE = Path("continuity/data")
 INDEX_RELATIVE = Path("continuity/index.sqlite3")
 STORE_VERSION = 1
 CHECKPOINT_INTERVAL = 10
+LEDGER_HEADERS = {
+    "fact-ledger.md": ["ID", "稳定事实", "发生章节", "证据", "涉及角色", "状态与后续约束"],
+    "payoff-ledger.md": ["ID", "承诺/伏笔", "来源", "首现", "目标窗口", "当前状态", "最近推进", "风险与下次窗口"],
+    "resource-ledger.md": ["ID", "资源", "持有人/归属", "可见性与状态", "来源", "使用窗口与禁止误用"],
+}
 DOMAIN_FILES = {
     "facts": "facts.yaml",
     "payoffs": "payoffs.yaml",
@@ -111,9 +116,12 @@ def parse_markdown_tables(path: Path) -> list[list[dict[str, str]]]:
 
 def parse_markdown_table(path: Path) -> list[dict[str, str]]:
     tables = parse_markdown_tables(path)
-    if tables:
-        return tables[0]
-    raise ValueError(f"{path}: no Markdown table found")
+    rows = tables[0]
+    if rows:
+        missing = [field for field in LEDGER_HEADERS.get(path.name, []) if field not in rows[0]]
+        if missing:
+            raise ValueError(f"{path}: migration needs columns {', '.join(missing)}; keep original entries and map them before migrating")
+    return rows
 
 
 def split_status(value: str) -> tuple[str, str]:
@@ -359,15 +367,15 @@ def render_views(workspace: Path, store: dict[str, Any] | None = None) -> list[P
     atomic_write_text(paths[0], baseline_text)
     fact_rows = [[item["id"], item["summary"], item["introduced_in"], item["evidence"]["text"], "、".join(item.get("characters", [])), "；".join(filter(None, [str(item.get("status", "")), str(item.get("constraints", ""))]))] for item in store["facts"]]
     fact_path = workspace / "continuity/fact-ledger.md"
-    atomic_write_text(fact_path, header + "# 事实账本\n\n" + markdown_table(["ID", "稳定事实", "发生章节", "证据", "涉及角色", "状态与后续约束"], fact_rows))
+    atomic_write_text(fact_path, header + "# 事实账本\n\n" + markdown_table(LEDGER_HEADERS[fact_path.name], fact_rows))
     paths.append(fact_path)
     payoff_rows = [[item["id"], item["summary"], item["evidence"]["text"], item["introduced_in"], item.get("target_window", ""), item.get("status", ""), item.get("latest_progress", ""), item.get("risks_next_window", "")] for item in store["payoffs"]]
     payoff_path = workspace / "continuity/payoff-ledger.md"
-    atomic_write_text(payoff_path, header + "# 伏笔与承诺账本\n\n" + markdown_table(["ID", "承诺/伏笔", "来源", "首现", "目标窗口", "当前状态", "最近推进", "风险与下次窗口"], payoff_rows))
+    atomic_write_text(payoff_path, header + "# 伏笔与承诺账本\n\n" + markdown_table(LEDGER_HEADERS[payoff_path.name], payoff_rows))
     paths.append(payoff_path)
     resource_rows = [[item["id"], item["summary"], item.get("holder", ""), item.get("visibility_state", ""), item["introduced_in"], item.get("usage_constraints", "")] for item in store["resources"]]
     resource_path = workspace / "continuity/resource-ledger.md"
-    atomic_write_text(resource_path, header + "# 资源账本\n\n" + markdown_table(["ID", "资源", "持有人/归属", "可见性与状态", "来源", "使用窗口与禁止误用"], resource_rows))
+    atomic_write_text(resource_path, header + "# 资源账本\n\n" + markdown_table(LEDGER_HEADERS[resource_path.name], resource_rows))
     paths.append(resource_path)
     return paths
 
@@ -376,11 +384,47 @@ def checkpoint_path(workspace: Path, chapter: str) -> Path:
     return workspace / STORE_RELATIVE / "checkpoints" / f"checkpoint-{chapter_number(chapter):03d}.yaml"
 
 
+def markdown_checkpoint(workspace: Path, number: int, reason: str) -> Path:
+    state = read_yaml(workspace / "novel-state.yaml")
+    continuity = state.get("continuity", {})
+    if continuity.get("structured_store", {}).get("authority") == "yaml":
+        raise ValueError("structured continuity store is missing")
+    if number != chapter_number(continuity.get("last_committed_chapter")):
+        raise ValueError("Markdown checkpoint must match the last committed chapter")
+    files = {}
+    for relative in ("continuity/baseline.md", "continuity/fact-ledger.md", "continuity/payoff-ledger.md",
+                     "continuity/resource-ledger.md", "characters/character-roster.md"):
+        path = workspace / relative
+        if path.is_file():
+            files[relative] = path.read_text(encoding="utf-8-sig")
+    delta = state.get("artifacts", {}).get(f"chapter_{number:03d}_delta")
+    if delta:
+        path = (workspace / delta["path"]).resolve()
+        if (not path.is_relative_to(workspace.resolve()) or delta.get("status") != "ready"
+                or not path.is_file() or sha256(path).lower() != delta.get("sha256")):
+            raise ValueError("checkpoint requires a current committed chapter delta")
+        files[path.relative_to(workspace.resolve()).as_posix()] = path.read_text(encoding="utf-8-sig")
+    if not files:
+        raise ValueError("no Markdown continuity sources available for checkpoint")
+    payload = {"schema_version": STORE_VERSION, "authority": "markdown", "chapter": chapter_label(number),
+               "reason": reason, "snapshot": files}
+    digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    path = workspace / "continuity/checkpoints" / f"checkpoint-{number:03d}-{digest[:12]}.yaml"
+    if path.exists():
+        if read_yaml(path) != payload:
+            raise ValueError(f"checkpoint was edited: {path}")
+    else:
+        write_yaml(path, payload)
+    return path
+
+
 def create_checkpoint(workspace: Path, chapter: str, reason: str, store: dict[str, Any] | None = None) -> Path:
-    store = store or load_store(workspace)
-    number = chapter_number(chapter)
-    if number is None:
+    number = int(chapter) if chapter.isdigit() else chapter_number(chapter)
+    if number is None or number < 1:
         raise ValueError("checkpoint chapter must be a chapter label or number")
+    if store is None and not (workspace / STORE_RELATIVE).exists():
+        return markdown_checkpoint(workspace, number, reason)
+    store = store or load_store(workspace)
     manifest = copy.deepcopy(store["manifest"])
     payload = {
         "schema_version": STORE_VERSION,
@@ -600,36 +644,109 @@ def index_candidate_ids(workspace: Path, target: int, revision: int) -> set[str]
         return None
 
 
-def assemble_context(workspace: Path, target: int, characters: set[str], budget: int) -> str:
+def payoff_due(window: str, target: int) -> bool:
+    # A named volume or an approximate deadline needs author judgment.
+    match = re.fullmatch(
+        r"(?:chapter[-_ ]?|第\s*)?(\d+)\s*章?(?:\s*(?:[-–—~～至到])\s*(?:chapter[-_ ]?|第\s*)?(\d+)\s*章?)?",
+        window.strip(), re.IGNORECASE)
+    return bool(match and int(match[1]) <= target <= int(match[2] or match[1]))
+
+
+def open_payoff(status: str) -> bool:
+    return status.strip() not in {"paid_off", "retired", "已兑现", "已回收", "已关闭", "已废弃"}
+
+
+def required_markdown_rows(workspace: Path, target: int, required_ids: Iterable[str]) -> list[tuple[str, str]]:
+    """Read specific rows from the original ledgers without requiring migration."""
+    missing = set(required_ids)
+    result = []
+    for relative in ("continuity/payoff-ledger.md", "continuity/resource-ledger.md",
+                     "continuity/fact-ledger.md", "characters/character-roster.md"):
+        path = workspace / relative
+        if not path.is_file():
+            continue
+        headers = []
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            if not line.lstrip().startswith("|"):
+                headers = []
+                continue
+            cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+            if cells[0] == "ID":
+                headers = cells
+                continue
+            if not headers or len(headers) != len(cells):
+                continue
+            row = dict(zip(headers, cells))
+            key = cells[0]
+            introduced = chapter_number(row.get("发生章节") or row.get("首现") or row.get("来源"))
+            if introduced and introduced > target:
+                continue
+            due = payoff_due(row.get("目标窗口", ""), target) and open_payoff(row.get("当前状态", ""))
+            if key in missing or due:
+                result.append((relative, line.strip()))
+                missing.discard(key)
+    if missing:
+        raise ValueError("required continuity IDs unavailable: " + ", ".join(sorted(missing)))
+    return result
+
+
+def assemble_context(workspace: Path, target: int, characters: set[str], budget: int,
+                     required_ids: Iterable[str] = ()) -> str:
     store = load_store(workspace)
     errors = validate_store(workspace, store)
     if errors:
         raise ValueError("cannot assemble invalid store: " + "; ".join(errors))
     selected_ids = index_candidate_ids(workspace, target, store["manifest"]["revision"])
     source = "SQLite candidates + YAML authority" if selected_ids is not None else "YAML direct fallback (SQLite missing or stale)"
-    lines = [f"<!-- continuity-context: revision {store['manifest']['revision']}; source: {source} -->", "", f"# 第{target:03d}章连续性上下文", ""]
-    def append_section(title: str, entries: Iterable[dict[str, Any]], formatter: Any) -> None:
-        nonlocal lines
-        material = [entry for entry in entries if selected_ids is None or entry.get("id") in selected_ids]
-        if not material:
+    header = f"<!-- continuity-context: revision {store['manifest']['revision']}; source: {source} -->\n\n# 第{target:03d}章连续性上下文\n"
+    pins = dict.fromkeys(required_ids)
+    rows = []
+
+    def add(item: dict, rank: int, label: str, fields: Iterable[str]) -> None:
+        key = item["id"]
+        if (selected_ids is not None and key not in selected_ids
+                or (chapter_number(item.get("introduced_in")) or 0) > target
+                or (chapter_number(item.get("updated_in")) or 0) > target):
             return
-        lines.extend([f"## {title}", ""])
-        for entry in material:
-            candidate = f"- `{entry['id']}`：{formatter(entry)}"
-            if len("\n".join(lines + [candidate])) > budget:
-                return
-            lines.append(candidate)
-        lines.append("")
-    active_facts = [item for item in store["facts"] if (chapter_number(item["introduced_in"]) or 0) <= target]
-    if characters:
-        active_facts.sort(key=lambda item: (not bool(set(item.get("characters", [])) & characters), item["id"]))
-    append_section("稳定事实", active_facts, lambda item: f"{item['summary']}（{item.get('constraints', '')}）")
-    append_section("未结伏笔", [item for item in store["payoffs"] if item.get("status") not in {"paid_off", "retired"}], lambda item: f"{item['summary']}；{item.get('risks_next_window', '')}")
-    append_section("活跃资源", [item for item in store["resources"] if item.get("status") != "retired"], lambda item: f"{item['summary']}；{item.get('usage_constraints', '')}")
-    if characters:
-        append_section("角色状态", [item for item in store["characters"] if item.get("id") in characters], lambda item: f"{item.get('name', '')}；{'；'.join(item.get('current_state', [])) or '无新增动态状态'}")
-        append_section("关系约束", [item for item in store["relationships"] if {item.get("character_a"), item.get("character_b")} & characters], lambda item: f"{item.get('public_relation', '')}；不得越过：{item.get('constraints', '')}")
-    return "\n".join(lines).rstrip() + "\n"
+        if key in pins:
+            rank = 0
+        updated = chapter_number(item.get("updated_in")) or 0
+        detail = "；".join(str(field) for field in fields if field)
+        rows.append((rank, -updated, key, f"- {label} `{key}`：{detail}\n"))
+
+    for item in store["payoffs"]:
+        window = item.get("target_window", "")
+        active = open_payoff(item.get("status", ""))
+        if active or item["id"] in pins:
+            due = active and payoff_due(window, target)
+            add(item, 1 if due else 5, "到期伏笔" if due else "伏笔", (
+                item["summary"], window, item.get("status"), item.get("latest_progress"), item.get("risks_next_window")))
+    for item in store["characters"]:
+        if item["id"] in characters or item["id"] in pins:
+            add(item, 2, "角色", (item.get("name"), *item.get("current_state", [])))
+    for item in store["relationships"]:
+        if {item.get("character_a"), item.get("character_b")} & characters or item["id"] in pins:
+            add(item, 2, "关系", (item["character_a"], item["character_b"], item.get("public_relation"), item["constraints"]))
+    for item in store["resources"]:
+        if item.get("status") != "retired" or item["id"] in pins:
+            add(item, 3, "资源", (item["summary"], item.get("holder"), item.get("visibility_state"), item.get("usage_constraints")))
+    for item in store["facts"]:
+        relevant = bool(characters.intersection(item.get("characters", [])))
+        add(item, 4 if relevant else 6, "事实", (item["summary"], item.get("constraints"), item.get("introduced_in")))
+    missing = pins.keys() - {row[2] for row in rows}
+    if missing:
+        raise ValueError("required continuity IDs unavailable: " + ", ".join(sorted(missing)))
+    if len(header) > budget:
+        raise ValueError("context budget cannot fit continuity header")
+    lines = [header]
+    remaining = budget - len(header)
+    for rank, _, key, line in sorted(rows):
+        if len(line) <= remaining:
+            lines.append(line)
+            remaining -= len(line)
+        elif rank <= 1:
+            raise ValueError(f"context budget cannot fit required continuity ID {key}; increase --max-chars")
+    return "".join(lines)
 
 
 def validate_workspace(workspace: Path) -> tuple[list[str], list[str]]:
@@ -694,7 +811,7 @@ def command_index(args: argparse.Namespace) -> None:
 
 def command_context(args: argparse.Namespace) -> None:
     chars = set(split_list(args.characters)) if args.characters else set()
-    print(assemble_context(args.workspace.resolve(), args.chapter, chars, args.max_chars), end="")
+    print(assemble_context(args.workspace.resolve(), args.chapter, chars, args.max_chars, args.require_id), end="")
 
 
 def command_checkpoint(args: argparse.Namespace) -> None:
@@ -718,6 +835,7 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("workspace", type=Path)
     context.add_argument("--chapter", type=int, required=True)
     context.add_argument("--characters", default="")
+    context.add_argument("--require-id", action="append", default=[], help="include this continuity ID or report why it cannot fit")
     context.add_argument("--max-chars", type=int, default=9000)
     checkpoint = subparsers.add_parser("checkpoint", help="Create an auditable YAML checkpoint")
     checkpoint.add_argument("workspace", type=Path)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import json
 import sys
 import tempfile
 import unittest
@@ -131,6 +132,87 @@ class ContinuityStoreCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("duplicate id FACT-001", result.stdout)
         self.assertIn("beyond last committed chapter", result.stdout)
+
+    def test_markdown_volume_checkpoint_uses_current_sources_without_migration(self) -> None:
+        args = ("checkpoint", str(self.workspace), "--chapter", "11", "--reason", "volume-end")
+        path = Path(json.loads(self.run_cli(*args).stdout)["checkpoint"])
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        self.assertEqual("markdown", payload["authority"])
+        self.assertIn("PAYOFF-001", payload["snapshot"]["continuity/payoff-ledger.md"])
+        self.assertFalse((self.workspace / "continuity/data").exists())
+        self.assertEqual(str(path), json.loads(self.run_cli(*args).stdout)["checkpoint"])
+        missing = self.run_cli(*args, "--chapter", "chapter-012", check=False)
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("last committed chapter", missing.stderr)
+
+    def test_new_workspace_payoff_template_recalls_due_but_not_already_paid_off(self) -> None:
+        book = self.workspace / "new"
+        init = [sys.executable, str(ROOT / "scripts/novelctl.py"), "init", str(book), "--title", "新书"]
+        subprocess.run(init, check=True, capture_output=True)
+        ledger = book / "continuity/payoff-ledger.md"
+        with ledger.open("a", encoding="utf-8") as handle:
+            handle.write("| P-01 | 补纸 | 第一章残根 | chapter-001 | 第2章 | advanced | 找到同纹纸 | 对照 |\n")
+            handle.write("| P-02 | 印记 | 第一章封条 | chapter-001 | 第2章 | paid_off | 已核实 | 无 |\n")
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import continuity_store
+        rows = continuity_store.required_markdown_rows(book, 2, [])
+        self.assertEqual(1, len(rows))
+        self.assertIn("P-01", rows[0][1])
+        self.assertEqual("paid_off", continuity_store.migrate_payoffs(ledger)[1]["status"])
+        ledger.write_text("| ID | 状态与证据 |\n| --- | --- |\n| P-01 | 找到同纹纸 |\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "migration needs columns.*当前状态"):
+            continuity_store.migrate_payoffs(ledger)
+
+    def test_due_payoff_and_required_resource_survive_crowded_budget(self) -> None:
+        fact_path = self.workspace / "continuity/fact-ledger.md"
+        with fact_path.open("a", encoding="utf-8") as handle:
+            for i in range(2, 162):
+                handle.write(f"| FACT-{i:03d} | 旧案现场的普通物件{i}。 | chapter-001 | 案簿 | CHAR-001 | 稳定；证物已经收存。 |\n")
+        payoff = self.workspace / "continuity/payoff-ledger.md"
+        payoff.write_text(payoff.read_text(encoding="utf-8").replace("chapter-012", "第12–14章"), encoding="utf-8")
+        self.run_cli("migrate", str(self.workspace))
+        args = ("assemble-context", str(self.workspace), "--chapter", "12", "--max-chars", "2000",
+                "--characters", "CHAR-001", "--require-id", "RESOURCE-001")
+        indexed = self.run_cli(*args).stdout
+        (self.workspace / "continuity/index.sqlite3").unlink()
+        direct = self.run_cli(*args).stdout
+        for result in (indexed, direct):
+            self.assertLessEqual(len(result), 2000)
+            self.assertIn("不得单方拆封", result)
+            self.assertIn("到期伏笔 `PAYOFF-001`", result)
+            self.assertIn("角色 `CHAR-001`", result)
+            self.assertNotIn("FACT-161", result)
+        missing = self.run_cli(*args, "--require-id", "RESOURCE-100", check=False)
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("RESOURCE-100", missing.stderr)
+        payoff_yaml = self.workspace / "continuity/data/payoffs.yaml"
+        payoffs = yaml.safe_load(payoff_yaml.read_text(encoding="utf-8"))
+        payoffs[0]["risks_next_window"] = "关键证据" * 300
+        payoff_yaml.write_text(yaml.safe_dump(payoffs, allow_unicode=True), encoding="utf-8")
+        rejected = self.run_cli(*args, "--max-chars", "1000", check=False)
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertIn("required continuity ID", rejected.stderr)
+
+    def test_legacy_context_selects_due_row_and_preserves_existing_output_on_failure(self) -> None:
+        (self.workspace / "novel-brief.md").write_text("查清失踪案。", encoding="utf-8")
+        previous = self.workspace / "chapters/chapter-011"
+        previous.mkdir()
+        (previous / "draft.md").write_text("证物仍在衙门。", encoding="utf-8")
+        with (self.workspace / "continuity/fact-ledger.md").open("a", encoding="utf-8") as handle:
+            handle.write("旧事实占用预算。" * 500)
+        args = [sys.executable, str(ROOT / "scripts/novelctl.py"), "context", str(self.workspace), "--chapter", "12",
+                "--require-id", "RESOURCE-001", "--max-chars", "1000", "--output", "context.md"]
+        result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(0, result.returncode, result.stderr)
+        out = self.workspace / "context.md"
+        expected = out.read_text(encoding="utf-8")
+        self.assertLessEqual(len(expected), 1000)
+        self.assertIn("不得单方拆封", expected)
+        self.assertIn("第十二章核验", expected)
+        self.assertNotIn("旧事实占用预算", expected)
+        failed = subprocess.run(args + ["--require-id", "FACT-00"], capture_output=True, text=True, encoding="utf-8")
+        self.assertNotEqual(0, failed.returncode)
+        self.assertEqual(expected, out.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
