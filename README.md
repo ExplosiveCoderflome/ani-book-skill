@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[快速开始](#快速开始) · [完本路线](#从第一个想法到小说完本) · [拆书路线](#拆书如何进入创作) · [写法与去-ai-化](#写法与去-ai-化) · [更新记录](docs/releases/release-notes.md) · [English](README.en.md)
+[《书中末行》试读与检测截图](#小说实测) · [快速开始](#快速开始) · [完本路线](#从第一个想法到小说完本) · [拆书路线](#拆书如何进入创作) · [写法与去-ai-化](#写法与去-ai-化) · [更新记录](docs/releases/release-notes.md) · [English](README.en.md)
 
 </div>
 
@@ -19,6 +19,18 @@
 Ani Book Skill 是面向中文长篇小说的 **Codex 原生 Skill**。它把选题、拆书、规划、正文、修订和连续性维护组织成可恢复的工作流，产物保存在你能直接阅读、编辑和备份的本地 Markdown / YAML 文件中。
 
 **Codex 负责理解与创作，Skill 规定流程，本地工具核对状态、版本和依赖。** 你可以逐项决定关键设置，也可以把指定范围交给 Codex 推进。
+
+## 小说实测
+
+写《书中末行》时，作者给了这样一句设定。
+
+> 修书匠能听见每本书被删掉的最后一句话。
+
+第一章里，修书匠季杼在一本码头脚簿里听见“零头在岸上”，说话声却和她自己一模一样。这次试写按卷规划，逐章写作、修订和审校。已公开的前 37 章写到第三卷，共 **82,171 个正文汉字**。[阅读《书中末行》第 1–37 章 TXT](docs/examples/书中末行/书中末行-第1至37章.txt)
+
+下图记录了对第一章开头的一次 AI 文本检测。检测工具给这段节选标出的“人工特征”占比为 **100%**。
+
+![《书中末行》第一章开头的检测截图，页面显示“人工创作特征显著”](docs/examples/书中末行/AI检测截图.png)
 
 ## 功能一览
 

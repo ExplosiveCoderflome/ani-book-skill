@@ -10,7 +10,7 @@ Book planning · Reference analysis · Original adaptation · Fanfic · Style an
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[Quick start](#quick-start) · [Novel pathway](#from-first-idea-to-a-finished-novel) · [Analysis pathway](#from-reference-analysis-to-writing) · [Style and humanization](#style-and-humanization) · [Changelog](docs/releases/release-notes.md) · [中文](README.md)
+[Read the novel and see the detector result](#novel-sample) · [Quick start](#quick-start) · [Novel pathway](#from-first-idea-to-a-finished-novel) · [Analysis pathway](#from-reference-analysis-to-writing) · [Style and humanization](#style-and-humanization) · [Changelog](docs/releases/release-notes.md) · [中文](README.md)
 
 </div>
 
@@ -19,6 +19,18 @@ Book planning · Reference analysis · Original adaptation · Fanfic · Style an
 Ani Book Skill is a **Codex-native Skill for long-form Chinese fiction**. It organizes research, planning, prose, revision, and continuity into a resumable workflow, with artifacts stored in local Markdown / YAML files that you can read, edit, and back up.
 
 **Codex understands and creates; the Skill defines the process; local tools check state, versions, and dependencies.** You can decide key settings yourself or delegate a defined scope to Codex.
+
+## Novel sample
+
+This was the starting premise for *书中末行*.
+
+> A book restorer can hear the last sentence erased from every book.
+
+In the first chapter, Ji Zhu hears a voice say “The remainder is on the bank” from a dockworkers’ ledger. It sounds exactly like her own. The Skill took that premise through volume planning, drafting, revision and chapter review. The Chinese manuscript currently reaches chapter 37 in the third volume, with **82,171 Chinese characters of prose**. [Read chapters 1–37 (TXT, Chinese)](docs/examples/书中末行/书中末行-第1至37章.txt)
+
+The screenshot shows one detector run on the opening passage of chapter 1. The tool reported **100%** in its “人工特征” (human-writing features) category for that excerpt.
+
+![Detector result for the opening of chapter 1, showing 100% in the human-writing features category](docs/examples/书中末行/AI检测截图.png)
 
 ## Capabilities
 
