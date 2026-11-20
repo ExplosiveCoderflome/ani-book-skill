@@ -28,6 +28,8 @@ This was the starting premise for *书中末行*.
 
 In the first chapter, Ji Zhu hears a voice say “The remainder is on the bank” from a dockworkers’ ledger. It sounds exactly like her own. The Skill took that premise through volume planning, drafting, revision and chapter review. The Chinese manuscript currently reaches chapter 37 in the third volume, with **82,171 Chinese characters of prose**. [Read chapters 1–37 (TXT, Chinese)](docs/examples/书中末行/书中末行-第1至37章.txt)
 
+The chapter 37 snapshot includes volume plans, drafts, revisions and payoff records. You can unpack it and inspect where chapter 38 was about to begin. [Workspace guide (Chinese)](docs/examples/书中末行/README.md) · [Download the snapshot (ZIP)](docs/examples/书中末行/书中末行-第37章工程快照.zip)
+
 The screenshot shows one detector run on the opening passage of chapter 1. The tool reported **100%** in its “人工特征” (human-writing features) category for that excerpt.
 
 ![Detector result for the opening of chapter 1, showing 100% in the human-writing features category](docs/examples/书中末行/AI检测截图.png)
